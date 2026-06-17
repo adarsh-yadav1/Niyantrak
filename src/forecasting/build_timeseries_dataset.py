@@ -3,6 +3,19 @@ import pandas as pd
 from sklearn.cluster import DBSCAN
 
 
+def normalize_datetime_utc_naive(series):
+
+    return (
+        pd.to_datetime(
+            series,
+            errors="coerce",
+            utc=True
+        )
+        .dt.tz_convert(None)
+    )
+
+
+
 def build_timeseries_dataset(df):
 
     print("\nBuilding Advanced Time Series Dataset...")
@@ -13,9 +26,8 @@ def build_timeseries_dataset(df):
 
     df = df.copy()
 
-    df["start_datetime"] = pd.to_datetime(
-        df["start_datetime"],
-        errors="coerce"
+    df["start_datetime"] = normalize_datetime_utc_naive(
+        df["start_datetime"]
     )
 
     df = df.dropna(

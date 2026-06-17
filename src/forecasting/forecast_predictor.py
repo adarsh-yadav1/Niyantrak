@@ -1,22 +1,57 @@
 import numpy as np
 
 
+class HurdleModelBundle(dict):
+    """
+    Dict-like hurdle model package with sklearn-style .predict() support.
+
+    This keeps both things working:
+
+    1. New hurdle architecture:
+       classifier + regressor + threshold
+
+    2. Old model-style usage:
+       model.predict(X)
+    """
+
+    def predict(self, X):
+
+        result = predict_forecast_count(
+            self,
+            X
+        )
+
+        return result["expected_count"]
+
+    def predict_details(self, X):
+
+        return predict_forecast_count(
+            self,
+            X
+        )
+
+    def predict_proba(self, X):
+
+        classifier = self["classifier"]
+
+        return classifier.predict_proba(
+            X
+        )
+
+
 def predict_forecast_count(
     model_bundle,
     X
 ):
     """
-    Supports both:
-    1. New zero-inflated / hurdle model bundle
-    2. Old single CatBoostRegressor model
-
-    For sparse traffic incident data:
-    - alert_probability is used for risk ranking
-    - expected_count is threshold-gated to avoid overpredicting zeros
+    Supports:
+    1. HurdleModelBundle
+    2. plain dict hurdle bundle
+    3. old single CatBoostRegressor
     """
 
     # =====================================================
-    # NEW ZERO-INFLATED / HURDLE MODEL
+    # ZERO-INFLATED / HURDLE MODEL
     # =====================================================
 
     if (
@@ -29,7 +64,7 @@ def predict_forecast_count(
 
         alert_threshold = model_bundle.get(
             "alert_threshold",
-            0.35
+            0.55
         )
 
         positive_count_mean = model_bundle.get(
@@ -46,12 +81,14 @@ def predict_forecast_count(
         ).astype(int)
 
         # =================================================
-        # Positive-count prediction
+        # Positive count prediction
         # =================================================
 
         if regressor is not None:
 
-            positive_log_pred = regressor.predict(X)
+            positive_log_pred = regressor.predict(
+                X
+            )
 
             positive_count_pred = np.expm1(
                 positive_log_pred
@@ -70,16 +107,10 @@ def predict_forecast_count(
             )
 
         # =================================================
-        # CONSERVATIVE COUNT CALIBRATION
+        # Threshold-gated count prediction
         #
-        # Old formula:
-        # expected_count = alert_probability * positive_count
-        #
-        # Problem:
-        # It overpredicts many zero rows.
-        #
-        # New formula:
-        # Only probability above threshold contributes strongly.
+        # Because 93%+ rows are zero, we should not predict
+        # count unless alert probability crosses threshold.
         # =================================================
 
         probability_strength = (
@@ -111,7 +142,6 @@ def predict_forecast_count(
             0.0
         )
 
-        # Optional raw expected count for diagnostics
         raw_expected_count = (
             alert_proba
             *
@@ -136,7 +166,9 @@ def predict_forecast_count(
     # OLD SINGLE REGRESSOR FALLBACK
     # =====================================================
 
-    preds = model_bundle.predict(X)
+    preds = model_bundle.predict(
+        X
+    )
 
     preds = np.maximum(
         preds,

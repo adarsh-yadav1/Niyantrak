@@ -18,7 +18,8 @@ from sklearn.metrics import (
 )
 
 from src.forecasting.forecast_predictor import (
-    predict_forecast_count
+    predict_forecast_count,
+    HurdleModelBundle
 )
 
 
@@ -63,6 +64,8 @@ CAT_FEATURES = [
 
 
 TARGET = "incident_count"
+
+
 
 
 def validate_dataset(ts_df):
@@ -247,7 +250,7 @@ def fit_hurdle_bundle(
                 y_train.loc[positive_mask].mean()
             )
 
-    bundle = {
+    bundle = HurdleModelBundle({
         "model_type": "zero_inflated_hurdle_v1",
 
         "classifier": classifier,
@@ -258,7 +261,7 @@ def fit_hurdle_bundle(
 
         "alert_threshold": float(alert_threshold),
         "positive_count_mean": float(positive_count_mean),
-    }
+    })
 
     return bundle
 
