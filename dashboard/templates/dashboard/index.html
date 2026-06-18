@@ -232,26 +232,15 @@
             </div>
 
             <div class="field">
-                <label>Corridor</label>
+                <label>Corridor auto-inferred from coordinates</label>
 
-                <select name="corridor" id="corridor">
-                    <option value="Non-corridor" {% if form.corridor == "Non-corridor" %}selected{% endif %}>Non-corridor</option>
-                    <option value="ORR East 1" {% if form.corridor == "ORR East 1" %}selected{% endif %}>ORR East 1</option>
-                    <option value="ORR East 2" {% if form.corridor == "ORR East 2" %}selected{% endif %}>ORR East 2</option>
-                    <option value="ORR North 1" {% if form.corridor == "ORR North 1" %}selected{% endif %}>ORR North 1</option>
-                    <option value="ORR North 2" {% if form.corridor == "ORR North 2" %}selected{% endif %}>ORR North 2</option>
-                    <option value="Mysore Road" {% if form.corridor == "Mysore Road" %}selected{% endif %}>Mysore Road</option>
-                    <option value="CBD 1" {% if form.corridor == "CBD 1" %}selected{% endif %}>CBD 1</option>
-                    <option value="CBD 2" {% if form.corridor == "CBD 2" %}selected{% endif %}>CBD 2</option>
-                    <option value="Hosur Road" {% if form.corridor == "Hosur Road" %}selected{% endif %}>Hosur Road</option>
-                    <option value="Old Airport Road" {% if form.corridor == "Old Airport Road" %}selected{% endif %}>Old Airport Road</option>
-                    <option value="Old Madras Road" {% if form.corridor == "Old Madras Road" %}selected{% endif %}>Old Madras Road</option>
-                    <option value="Tumkur Road" {% if form.corridor == "Tumkur Road" %}selected{% endif %}>Tumkur Road</option>
-                    <option value="Bellary Road 1" {% if form.corridor == "Bellary Road 1" %}selected{% endif %}>Bellary Road 1</option>
-                    <option value="Bellary Road 2" {% if form.corridor == "Bellary Road 2" %}selected{% endif %}>Bellary Road 2</option>
-                    <option value="Varthur Road" {% if form.corridor == "Varthur Road" %}selected{% endif %}>Varthur Road</option>
-                    <option value="Bannerghata Road" {% if form.corridor == "Bannerghata Road" %}selected{% endif %}>Bannerghata Road</option>
-                </select>
+                <input
+                    type="text"
+                    name="corridor"
+                    id="corridor"
+                    value="{% if result %}{{ result.input.corridor }}{% else %}Auto inferred after prediction{% endif %}"
+                    readonly
+                >
             </div>
 
             <div class="field">
@@ -293,6 +282,28 @@
                     <option value="taxi" {% if form.veh_type == "taxi" %}selected{% endif %}>taxi</option>
                     <option value="auto" {% if form.veh_type == "auto" %}selected{% endif %}>auto</option>
                     <option value="others" {% if form.veh_type == "others" %}selected{% endif %}>others</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label>Crowd size</label>
+
+                <select name="crowd_size" id="crowd_size">
+                    <option value="small">Small (&lt; 500)</option>
+                    <option value="medium">Medium (500 - 5000)</option>
+                    <option value="large">Large (5000 - 50000)</option>
+                    <option value="mega">Mega (&gt; 50000)</option>
+                </select>
+            </div>
+
+            <div class="field">
+                <label>Weather</label>
+
+                <select name="weather" id="weather">
+                    <option value="clear">Clear</option>
+                    <option value="light_rain">Light Rain</option>
+                    <option value="heavy_rain">Heavy Rain</option>
+                    <option value="fog">Fog / Low Visibility</option>
                 </select>
             </div>
 
@@ -482,6 +493,94 @@
                                     ></div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="card fade-in">
+                        <div class="card-kicker">
+                            Location Intelligence
+                        </div>
+
+                        <h2>Coordinate Resolver</h2>
+
+                        <div class="kv">
+                            <span>Latitude</span>
+                            <strong class="mono">{{ result.input.latitude }}</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Longitude</span>
+                            <strong class="mono">{{ result.input.longitude }}</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Inferred Corridor</span>
+                            <strong class="mono">{{ result.input.corridor }}</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Match Method</span>
+                            <strong class="mono">{{ result.input.location_match.matched_by }}</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Match Distance</span>
+                            <strong class="mono">{{ result.input.location_match.distance_m }}m</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Confidence</span>
+                            <strong class="mono">{{ result.input.location_match.confidence }}</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Spatial Cluster</span>
+                            <strong class="mono">{{ result.input.location_match.spatial_cluster_id }}</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Nearest Hotspot</span>
+                            <strong class="mono">{{ result.input.location_match.nearest_hotspot_distance_m }}m</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Spatial Density</span>
+                            <strong class="mono">{{ result.input.location_match.spatial_density_at_point }}</strong>
+                        </div>
+                    </div>
+
+                    <div class="card fade-in">
+                        <div class="card-kicker">
+                            Event Quantification
+                        </div>
+
+                        <h2>Composite EIS</h2>
+
+                        <div class="kv">
+                            <span>EIS Score</span>
+                            <strong class="mono">{{ result.eis.score|floatformat:1 }}%</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>EIS Level</span>
+                            <strong class="badge severity-{{ result.eis.level|lower }}">
+                                {{ result.eis.level }}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Normal Baseline</span>
+                            <strong class="mono">{{ result.baseline.normal_baseline|floatformat:2 }}</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>After Event</span>
+                            <strong class="mono">{{ result.baseline.predicted_after_event|floatformat:2 }}</strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Expected Delta</span>
+                            <strong class="mono">{{ result.baseline.expected_delta|floatformat:2 }}</strong>
                         </div>
                     </div>
 
@@ -778,6 +877,37 @@
         `
     ).openPopup();
 
+    let selectedMarker = marker;
+
+    map.on("click", function (event) {
+        const clickedLat = event.latlng.lat.toFixed(6);
+        const clickedLon = event.latlng.lng.toFixed(6);
+
+        document.getElementById("latitude").value = clickedLat;
+        document.getElementById("longitude").value = clickedLon;
+
+        if (selectedMarker) {
+            map.removeLayer(selectedMarker);
+        }
+
+        selectedMarker = L.marker(
+            [
+                clickedLat,
+                clickedLon
+            ],
+            {
+                icon: eventIcon
+            }
+        ).addTo(map);
+
+        selectedMarker.bindPopup(
+            "Selected event location<br>Lat: "
+            + clickedLat
+            + "<br>Lon: "
+            + clickedLon
+        ).openPopup();
+    });
+
     const secondaryCircle = L.circle(
         [lat, lon],
         {
@@ -931,7 +1061,8 @@
     );
 
     function setValue(id, value) {
-        document.getElementById(id).value = value;
+        const el = document.getElementById(id);
+        if (el) el.value = value;
     }
 
     function loadScenario(type) {
@@ -941,10 +1072,11 @@
             setValue("priority", "High");
             setValue("latitude", "12.9716");
             setValue("longitude", "77.5946");
-            setValue("corridor", "CBD 1");
             setValue("veh_type", "private_bus");
             setValue("requires_road_closure", "yes");
             setValue("police_station", "Cubbon Park");
+            setValue("crowd_size", "large");
+            setValue("weather", "clear");
         }
 
         if (type === "breakdown") {
@@ -953,10 +1085,11 @@
             setValue("priority", "High");
             setValue("latitude", "12.9716");
             setValue("longitude", "77.5946");
-            setValue("corridor", "Non-corridor");
             setValue("veh_type", "lcv");
             setValue("requires_road_closure", "no");
             setValue("police_station", "Unknown");
+            setValue("crowd_size", "small");
+            setValue("weather", "clear");
         }
 
         if (type === "vip") {
@@ -965,10 +1098,11 @@
             setValue("priority", "Critical");
             setValue("latitude", "12.9810");
             setValue("longitude", "77.6090");
-            setValue("corridor", "Old Airport Road");
             setValue("veh_type", "private_car");
             setValue("requires_road_closure", "yes");
             setValue("police_station", "High Grounds");
+            setValue("crowd_size", "small");
+            setValue("weather", "clear");
         }
 
         if (type === "accident") {
@@ -977,10 +1111,11 @@
             setValue("priority", "Critical");
             setValue("latitude", "12.9200");
             setValue("longitude", "77.6200");
-            setValue("corridor", "ORR East 1");
             setValue("veh_type", "heavy_vehicle");
             setValue("requires_road_closure", "yes");
             setValue("police_station", "HSR Layout");
+            setValue("crowd_size", "medium");
+            setValue("weather", "clear");
         }
     }
 </script>
