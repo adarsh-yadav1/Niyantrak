@@ -1,6 +1,7 @@
 import os
 
 from config import DATA_PATH
+from config import FEATURE_STORE_PATH
 
 from src.preprocessing.load_data import load_data
 
@@ -20,8 +21,24 @@ from src.forecasting.forecast_feature_importance import (
     forecast_feature_importance
 )
 
+from src.inference.feature_store import (
+    build_feature_store
+)
 
-FORECAST_FEATURES = [
+from src.evaluation.cluster_fallback_ablation import (
+    run_cluster_fallback_ablation
+)
+
+from src.forecasting.train_quantile_intervals import (
+    train_quantile_intervals
+)
+
+from src.evaluation.eis_weight_calibration import (
+    run_eis_weight_calibration
+)
+
+
+FEATURES = [
     "corridor",
 
     "hour",
@@ -34,7 +51,6 @@ FORECAST_FEATURES = [
     "lag_1",
     "lag_2",
     "lag_3",
-
     "lag_24",
     "lag_48",
     "lag_72",
@@ -52,70 +68,48 @@ FORECAST_FEATURES = [
     "junction_risk",
     "cause_risk",
     "closure_risk",
-    "cluster_risk"
+    "cluster_risk",
 ]
 
 
-def validate_data_path():
-
-    if not os.path.exists(DATA_PATH):
-
-        raise FileNotFoundError(
-            f"Dataset not found at: {DATA_PATH}\n"
-            "Update DATA_PATH in config.py or place your dataset at that path."
-        )
-
-
-def validate_forecast_features(ts_df):
-
-    missing_features = [
-        col
-        for col in FORECAST_FEATURES
-        if col not in ts_df.columns
-    ]
-
-    if missing_features:
-
-        raise ValueError(
-            "Time-series dataset is missing required forecast features:\n"
-            + str(missing_features)
-        )
-
-    if "incident_count" not in ts_df.columns:
-
-        raise ValueError(
-            "Time-series dataset is missing target column: incident_count"
-        )
+def print_step(step_no, title):
+    print("\n" + "=" * 80)
+    print(f"STEP {step_no}: {title}")
+    print("=" * 80)
 
 
 def main():
 
-    print("\n" + "=" * 70)
-    print("TRAINING TRAFFIC INTELLIGENCE BACKEND")
-    print("=" * 70)
+    print("\n" + "=" * 80)
+    print("TRAINING FULL TRAFFIC INTELLIGENCE PIPELINE")
+    print("=" * 80)
 
     os.makedirs(
         "models",
         exist_ok=True
     )
 
-    validate_data_path()
-
     # =====================================================
     # STEP 1: LOAD DATA
     # =====================================================
 
-    print("\nStep 1: Loading Data")
+    print_step(
+        1,
+        "Loading Data"
+    )
 
     df = load_data(
         DATA_PATH
     )
 
     # =====================================================
-    # STEP 2: BUILD FORECAST DATASET
+    # STEP 2: BUILD TIME-SERIES DATASET
     # =====================================================
 
-    print("\nStep 2: Building Time-Series Forecast Dataset")
+    print_step(
+        2,
+        "Building Time-Series Forecast Dataset"
+    )
 
     ts_df = build_timeseries_dataset(
         df
@@ -126,25 +120,27 @@ def main():
         ts_df.shape
     )
 
-    validate_forecast_features(
-        ts_df
-    )
-
     # =====================================================
     # STEP 3: CROSS VALIDATION
     # =====================================================
 
-    print("\nStep 3: Time-Series Cross Validation")
+    print_step(
+        3,
+        "Running Time-Series Cross Validation"
+    )
 
     cross_validate_timeseries(
         ts_df
     )
 
     # =====================================================
-    # STEP 4: TRAIN MODEL
+    # STEP 4: TRAIN FINAL HURDLE FORECAST MODEL
     # =====================================================
 
-    print("\nStep 4: Training Final Forecast Model")
+    print_step(
+        4,
+        "Training Final Zero-Inflated Forecast Model"
+    )
 
     model = train_timeseries_model(
         ts_df
@@ -154,24 +150,91 @@ def main():
     # STEP 5: FEATURE IMPORTANCE
     # =====================================================
 
-    print("\nStep 5: Forecast Feature Importance")
+    print_step(
+        5,
+        "Saving Forecast Feature Importance"
+    )
 
     forecast_feature_importance(
         model,
-        FORECAST_FEATURES
+        FEATURES
     )
 
-    print("\n" + "=" * 70)
-    print("TRAINING COMPLETE")
-    print("=" * 70)
+    # =====================================================
+    # STEP 6: BUILD COORDINATE-AWARE FEATURE STORE
+    # =====================================================
 
-    print("\nGenerated files:")
-    print("models/timeseries_forecast_model.pkl")
-    print("models/timeseries_forecast.pkl")
-    print("forecast_feature_importance.png")
+    print_step(
+        6,
+        "Building Coordinate-Aware Feature Store"
+    )
+
+    build_feature_store(
+        data_path=DATA_PATH,
+        output_path=FEATURE_STORE_PATH
+    )
+
+    # =====================================================
+    # STEP 7: CLUSTER FALLBACK ABLATION STUDY
+    # =====================================================
+
+    print_step(
+        7,
+        "Running Cluster Fallback Ablation Study"
+    )
+
+    run_cluster_fallback_ablation(
+        data_path=DATA_PATH,
+        output_path="models/cluster_fallback_ablation.json"
+    )
+
+    # =====================================================
+    # STEP 8: TRAIN CATBOOST QUANTILE INTERVAL MODELS
+    # =====================================================
+
+    print_step(
+        8,
+        "Training CatBoost Quantile Interval Models"
+    )
+
+    train_quantile_intervals(
+        data_path=DATA_PATH
+    )
+
+    # =====================================================
+    # STEP 9: EIS WEIGHT MICRO-CALIBRATION
+    # =====================================================
+
+    print_step(
+        9,
+        "Running EIS Weight Micro-Calibration"
+    )
+
+    run_eis_weight_calibration(
+        data_path=DATA_PATH,
+        output_path="models/eis_weight_calibration.json",
+        sample_size=20
+    )
+
+    # =====================================================
+    # COMPLETE
+    # =====================================================
+
+    print("\n" + "=" * 80)
+    print("FULL TRAINING PIPELINE COMPLETE")
+    print("=" * 80)
+
+    print("\nGenerated / Updated Files:")
+    print("- models/timeseries_forecast_model.pkl")
+    print("- models/timeseries_forecast.pkl")
+    print("- models/traffic_feature_store.pkl")
+    print("- models/cluster_fallback_ablation.json")
+    print("- models/eis_weight_calibration.json")
+    print("- EIS_WEIGHT_CALIBRATION.md")
+    print("- forecast_feature_importance.png")
 
     print("\nNext command:")
-    print("python prepare_feature_store.py")
+    print("python manage.py runserver")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from datetime import datetime
-
+import json
 import joblib
 import numpy as np
 import pandas as pd
@@ -29,6 +29,19 @@ from src.routing.diversion_engine import recommend_diversions
 
 
 BASE_DIR = Path(settings.BASE_DIR)
+
+
+ABLATION_PATH = (
+    BASE_DIR
+    / "models"
+    / "cluster_fallback_ablation.json"
+)
+
+EIS_CALIBRATION_PATH = (
+    BASE_DIR
+    / "models"
+    / "eis_weight_calibration.json"
+)
 
 MODEL_PATHS = [
     BASE_DIR / "models" / "timeseries_forecast_model.pkl",
@@ -113,6 +126,73 @@ def clamp(value, low=0.0, high=100.0):
         low,
         min(float(value), high)
     )
+
+
+def load_ablation_results():
+    if not os.path.exists(ABLATION_PATH):
+        return {
+            "available": False,
+            "message": "Cluster fallback ablation has not been run yet.",
+        }
+
+    try:
+        with open(
+            ABLATION_PATH,
+            "r",
+            encoding="utf-8"
+        ) as file:
+            data = json.load(file)
+
+        data["available"] = True
+
+        return data
+
+    except Exception as e:
+        return {
+            "available": False,
+            "message": f"Could not load ablation results: {e}",
+        }
+
+
+def load_eis_calibration_results():
+    default_weights = {
+        "forecast_weight": 0.30,
+        "event_weight": 0.55,
+        "cause_weight": 0.15,
+    }
+
+    if not os.path.exists(EIS_CALIBRATION_PATH):
+        return {
+            "available": False,
+            "message": "EIS calibration has not been run yet.",
+            "best_weights": default_weights,
+            "best_method": "Default expert-weighted formula",
+            "best_mae": None,
+        }
+
+    try:
+        with open(
+            EIS_CALIBRATION_PATH,
+            "r",
+            encoding="utf-8"
+        ) as file:
+            data = json.load(file)
+
+        data["available"] = True
+
+        if "best_weights" not in data:
+            data["best_weights"] = default_weights
+
+        return data
+
+    except Exception as e:
+        return {
+            "available": False,
+            "message": f"Could not load EIS calibration: {e}",
+            "best_weights": default_weights,
+            "best_method": "Default expert-weighted formula",
+            "best_mae": None,
+        }
 
 
 def load_model():
@@ -332,8 +412,16 @@ def calculate_eis_score(
     forecast_score,
     adjusted_event_score,
     profile,
-    store
+    store,
+    weights=None
 ):
+    if weights is None:
+        weights = {
+            "forecast_weight": 0.30,
+            "event_weight": 0.55,
+            "cause_weight": 0.15,
+        }
+
     max_cause_risk = safe_float(
         store.get("max_cause_risk"),
         1.0
@@ -351,16 +439,36 @@ def calculate_eis_score(
         100
     )
 
-    # More operationally stable:
-    # event impact is dominant,
-    # forecast adds historical signal,
-    # cause risk adds historical context.
+    forecast_weight = safe_float(
+        weights.get("forecast_weight"),
+        0.30
+    )
+
+    event_weight = safe_float(
+        weights.get("event_weight"),
+        0.55
+    )
+
+    cause_weight = safe_float(
+        weights.get("cause_weight"),
+        0.15
+    )
+
+    total_weight = max(
+        forecast_weight + event_weight + cause_weight,
+        1e-6
+    )
+
+    forecast_weight /= total_weight
+    event_weight /= total_weight
+    cause_weight /= total_weight
+
     eis_score = (
-        0.30 * safe_float(forecast_score)
+        forecast_weight * safe_float(forecast_score)
         +
-        0.55 * safe_float(adjusted_event_score)
+        event_weight * safe_float(adjusted_event_score)
         +
-        0.15 * cause_risk_score
+        cause_weight * cause_risk_score
     )
 
     eis_score = clamp(
@@ -591,8 +699,125 @@ def estimate_affected_radius_meters(
 def build_prediction_interval(
     predicted_incidents,
     model_metrics,
-    alert_probability=None
+    alert_probability=None,
+    model=None,
+    X=None
 ):
+    """
+    Prefer CatBoost quantile interval if available.
+    Fallback to RMSE-based uncertainty only if quantile models are missing.
+    """
+
+    predicted_incidents = safe_float(
+        predicted_incidents,
+        0.0
+    )
+
+    if (
+        isinstance(model, dict)
+        and
+        X is not None
+        and
+        model.get("quantile_lower_model") is not None
+        and
+        model.get("quantile_upper_model") is not None
+    ):
+        try:
+            lower_model = model["quantile_lower_model"]
+            upper_model = model["quantile_upper_model"]
+
+            raw_lower = safe_float(
+                lower_model.predict(X)[0],
+                0.0
+            )
+
+            raw_upper = safe_float(
+                upper_model.predict(X)[0],
+                predicted_incidents
+            )
+
+            raw_lower = max(
+                0.0,
+                raw_lower
+            )
+
+            raw_upper = max(
+                raw_lower,
+                raw_upper
+            )
+
+            # Hurdle gating:
+            # If classifier says low incident probability, interval should shrink toward zero.
+            threshold = safe_float(
+                model.get("alert_threshold"),
+                0.50
+            )
+
+            if alert_probability is not None:
+                alert_probability = safe_float(
+                    alert_probability,
+                    0.0
+                )
+
+                if alert_probability <= threshold:
+                    strength = 0.0
+
+                else:
+                    strength = (
+                        alert_probability
+                        -
+                        threshold
+                    ) / max(
+                        1.0 - threshold,
+                        1e-6
+                    )
+
+                strength = clamp(
+                    strength,
+                    0.0,
+                    1.0
+                )
+
+            else:
+                strength = 1.0
+
+            lower = raw_lower * strength
+            upper = raw_upper * max(
+                strength,
+                0.25
+            )
+
+            lower = min(
+                lower,
+                predicted_incidents
+            )
+
+            upper = max(
+                upper,
+                predicted_incidents
+            )
+
+            return {
+                "expected": float(predicted_incidents),
+                "lower": float(lower),
+                "upper": float(upper),
+                "method": "CatBoost Quantile models with hurdle probability gating",
+                "label": "80% prediction interval",
+                "type": "catboost_quantile",
+                "coverage": (
+                    model.get("quantile_interval_metrics", {})
+                    .get("coverage")
+                ),
+                "average_width": (
+                    model.get("quantile_interval_metrics", {})
+                    .get("average_width")
+                ),
+            }
+
+        except Exception:
+            pass
+
+    # Fallback if quantile models are not trained yet.
     rmse = safe_float(
         model_metrics.get("rmse"),
         0.50
@@ -614,12 +839,12 @@ def build_prediction_interval(
 
     lower = max(
         0.0,
-        safe_float(predicted_incidents) - uncertainty_width
+        predicted_incidents - uncertainty_width
     )
 
     upper = max(
-        safe_float(predicted_incidents),
-        safe_float(predicted_incidents) + uncertainty_width
+        predicted_incidents,
+        predicted_incidents + uncertainty_width
     )
 
     return {
@@ -628,6 +853,9 @@ def build_prediction_interval(
         "upper": float(upper),
         "method": "Estimated uncertainty using holdout RMSE",
         "label": "Estimated uncertainty (±1 RMSE)",
+        "type": "rmse_fallback",
+        "coverage": None,
+        "average_width": None,
     }
 
 
@@ -986,11 +1214,23 @@ def predict_event_impact(payload):
         adjusted_event_score
     )
 
+    eis_calibration = load_eis_calibration_results()
+
+    eis_weights = eis_calibration.get(
+        "best_weights",
+        {
+            "forecast_weight": 0.30,
+            "event_weight": 0.55,
+            "cause_weight": 0.15,
+        }
+    )
+
     eis_score, cause_risk_score = calculate_eis_score(
         forecast_score=forecast_score,
         adjusted_event_score=adjusted_event_score,
         profile=profile,
-        store=store
+        store=store,
+        weights=eis_weights
     )
 
     eis_level = get_risk_level_from_score(
@@ -1130,7 +1370,9 @@ def predict_event_impact(payload):
     prediction_interval = build_prediction_interval(
         predicted_incidents=predicted_incidents,
         model_metrics=model_metrics,
-        alert_probability=alert_probability
+        alert_probability=alert_probability,
+        model=model,
+        X=X
     )
 
     similar_events = find_similar_events(
@@ -1155,6 +1397,8 @@ def predict_event_impact(payload):
         duration=duration,
         action=action
     )
+
+    ablation_results = load_ablation_results()
 
     return {
         "input": {
@@ -1207,6 +1451,7 @@ def predict_event_impact(payload):
             "score": eis_score,
             "level": eis_level,
             "cause_risk_score": cause_risk_score,
+            "weights": eis_weights,
         },
 
         "baseline": {
@@ -1271,6 +1516,10 @@ def predict_event_impact(payload):
         "metrics": model_metrics,
 
         "operational_metrics": operational_metrics,
+
+        "ablation": ablation_results,
+
+        "eis_calibration": eis_calibration,
 
         "map": {
             "latitude": latitude,

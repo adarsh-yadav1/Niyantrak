@@ -1,4 +1,5 @@
 import math
+import pandas as pd
 
 
 BENGALURU_BOUNDS = {
@@ -188,7 +189,6 @@ def estimate_spatial_density(latitude, longitude, store, radius_m=500):
         min(density, 1.0)
     )
 
-
 def resolve_spatial_cluster(latitude, longitude, store):
     model = store.get("spatial_cluster_model")
     centers = store.get("spatial_cluster_centers", {})
@@ -197,10 +197,17 @@ def resolve_spatial_cluster(latitude, longitude, store):
         return None, None
 
     try:
+        input_df = pd.DataFrame(
+            [
+                {
+                    "latitude": float(latitude),
+                    "longitude": float(longitude),
+                }
+            ]
+        )
+
         cluster_id = int(
-            model.predict(
-                [[float(latitude), float(longitude)]]
-            )[0]
+            model.predict(input_df)[0]
         )
 
         center = centers.get(str(cluster_id))
@@ -222,7 +229,6 @@ def resolve_spatial_cluster(latitude, longitude, store):
 
     except Exception:
         return None, None
-
 
 def nearest_point_match(
     latitude,

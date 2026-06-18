@@ -1,0 +1,181 @@
+{
+    "title": "EIS Weight Micro-Calibration",
+    "generated_at": "2026-06-19T02:21:00.437863",
+    "sample_size": 20,
+    "best_weights": {
+        "forecast_weight": 0.35,
+        "event_weight": 0.5,
+        "cause_weight": 0.15
+    },
+    "best_method": "Forecast stronger",
+    "best_mae": 11.441875,
+    "candidate_results": [
+        {
+            "name": "Forecast stronger",
+            "forecast_weight": 0.35,
+            "event_weight": 0.5,
+            "cause_weight": 0.15,
+            "mae": 11.441875
+        },
+        {
+            "name": "Forecast-heavy",
+            "forecast_weight": 0.4,
+            "event_weight": 0.45,
+            "cause_weight": 0.15,
+            "mae": 11.47295
+        },
+        {
+            "name": "Balanced default",
+            "forecast_weight": 0.3,
+            "event_weight": 0.55,
+            "cause_weight": 0.15,
+            "mae": 11.692150000000003
+        },
+        {
+            "name": "Event stronger",
+            "forecast_weight": 0.25,
+            "event_weight": 0.6,
+            "cause_weight": 0.15,
+            "mae": 12.300524999999997
+        },
+        {
+            "name": "Cause stronger",
+            "forecast_weight": 0.3,
+            "event_weight": 0.5,
+            "cause_weight": 0.2,
+            "mae": 12.829350000000002
+        },
+        {
+            "name": "Event-dominant",
+            "forecast_weight": 0.2,
+            "event_weight": 0.65,
+            "cause_weight": 0.15,
+            "mae": 13.009500000000003
+        }
+    ],
+    "sample_events": [
+        {
+            "event_cause": "vehicle_breakdown",
+            "corridor": "Non-corridor",
+            "hour": 20,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 2.0,
+            "actual_severity_proxy": 29.5,
+            "forecast_score": 0.0,
+            "event_score": 47.1,
+            "cause_risk_score": 69.56,
+            "profile_source": "spatial cluster-hour fallback history"
+        },
+        {
+            "event_cause": "vehicle_breakdown",
+            "corridor": "Mysore Road",
+            "hour": 23,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 2.0,
+            "actual_severity_proxy": 29.5,
+            "forecast_score": 38.72,
+            "event_score": 39.7,
+            "cause_risk_score": 79.39,
+            "profile_source": "exact inferred corridor-hour history"
+        },
+        {
+            "event_cause": "vehicle_breakdown",
+            "corridor": "ORR West 1",
+            "hour": 4,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 1.0,
+            "actual_severity_proxy": 29.5,
+            "forecast_score": 22.06,
+            "event_score": 40.1,
+            "cause_risk_score": 66.03,
+            "profile_source": "exact inferred corridor-hour history"
+        },
+        {
+            "event_cause": "accident",
+            "corridor": "Old Madras Road",
+            "hour": 21,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 2.0,
+            "actual_severity_proxy": 34.0,
+            "forecast_score": 23.77,
+            "event_score": 65.9,
+            "cause_risk_score": 74.41,
+            "profile_source": "exact inferred corridor-hour history"
+        },
+        {
+            "event_cause": "tree_fall",
+            "corridor": "Bannerghata Road",
+            "hour": 7,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 7.0,
+            "actual_severity_proxy": 52.5,
+            "forecast_score": 0.0,
+            "event_score": 63.76,
+            "cause_risk_score": 49.81,
+            "profile_source": "exact inferred corridor-hour history"
+        },
+        {
+            "event_cause": "vehicle_breakdown",
+            "corridor": "Tumkur Road",
+            "hour": 5,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 3.0,
+            "actual_severity_proxy": 29.5,
+            "forecast_score": 38.94,
+            "event_score": 39.7,
+            "cause_risk_score": 85.25,
+            "profile_source": "exact inferred corridor-hour history"
+        },
+        {
+            "event_cause": "construction",
+            "corridor": "Airport New South Road",
+            "hour": 5,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 22.0,
+            "actual_severity_proxy": 32.5,
+            "forecast_score": 0.0,
+            "event_score": 45.1,
+            "cause_risk_score": 53.56,
+            "profile_source": "exact inferred corridor-hour history"
+        },
+        {
+            "event_cause": "others",
+            "corridor": "Airport New South Road",
+            "hour": 20,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 2.0,
+            "actual_severity_proxy": 29.0,
+            "forecast_score": 0.0,
+            "event_score": 39.8,
+            "cause_risk_score": 53.56,
+            "profile_source": "exact inferred corridor-hour history"
+        },
+        {
+            "event_cause": "congestion",
+            "corridor": "ORR North 2",
+            "hour": 4,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 1.0,
+            "actual_severity_proxy": 31.5,
+            "forecast_score": 34.07,
+            "event_score": 45.1,
+            "cause_risk_score": 65.16,
+            "profile_source": "exact inferred corridor-hour history"
+        },
+        {
+            "event_cause": "vehicle_breakdown",
+            "corridor": "Bellary Road 1",
+            "hour": 21,
+            "duration_minutes": 0.0,
+            "actual_incident_count": 2.0,
+            "actual_severity_proxy": 29.5,
+            "forecast_score": 42.75,
+            "event_score": 54.7,
+            "cause_risk_score": 76.4,
+            "profile_source": "exact inferred corridor-hour history"
+        }
+    ],
+    "target_definition": "Actual severity proxy = 45% duration score + 25% same corridor-hour incident volume score + 20% road closure score + 10% event cause severity prior.",
+    "conclusion": "The selected EIS weights were calibrated on 20 historical events using a practical actual-severity proxy. Best method: Forecast stronger with MAE 11.44.",
+    "honesty_note": "This is a micro-calibration using a proxy severity target, not manually labelled ground truth. It gives evidence for the EIS weights and can be replaced by officer-labelled feedback data later."
+}

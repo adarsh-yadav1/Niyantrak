@@ -736,6 +736,98 @@
 
                     <div class="card full fade-in">
                         <div class="card-kicker">
+                            Fallback Validation
+                        </div>
+
+                        <h2>Cluster Fallback Ablation Study</h2>
+
+                        {% if result.ablation.available %}
+                            <p class="model-headline">
+                                {{ result.ablation.conclusion }}
+                            </p>
+
+                            <div class="ablation-grid">
+                                <div class="ablation-card">
+                                    <span>Rows Tested</span>
+                                    <strong>{{ result.ablation.rows_tested }}</strong>
+                                </div>
+
+                                <div class="ablation-card">
+                                    <span>Corridor MAE</span>
+                                    <strong>{{ result.ablation.normal_profile.mae|floatformat:4 }}</strong>
+                                </div>
+
+                                <div class="ablation-card">
+                                    <span>Cluster MAE</span>
+                                    <strong>{{ result.ablation.cluster_fallback.mae|floatformat:4 }}</strong>
+                                </div>
+
+                                <div class="ablation-card">
+                                    <span>MAE Improvement</span>
+                                    <strong>
+                                        {{ result.ablation.comparison.mae_improvement_pct|floatformat:2 }}%
+                                    </strong>
+                                </div>
+                            </div>
+
+                            <div class="comparison-table">
+                                <div class="comparison-row comparison-head">
+                                    <span>Method</span>
+                                    <span>MAE</span>
+                                    <span>RMSE</span>
+                                    <span>R²</span>
+                                </div>
+
+                                <div class="comparison-row">
+                                    <span>{{ result.ablation.normal_profile.label }}</span>
+                                    <strong>{{ result.ablation.normal_profile.mae|floatformat:4 }}</strong>
+                                    <strong>{{ result.ablation.normal_profile.rmse|floatformat:4 }}</strong>
+                                    <strong>
+                                        {% if result.ablation.normal_profile.r2 is not None %}
+                                            {{ result.ablation.normal_profile.r2|floatformat:4 }}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </strong>
+                                </div>
+
+                                <div class="comparison-row">
+                                    <span>{{ result.ablation.cluster_fallback.label }}</span>
+                                    <strong>{{ result.ablation.cluster_fallback.mae|floatformat:4 }}</strong>
+                                    <strong>{{ result.ablation.cluster_fallback.rmse|floatformat:4 }}</strong>
+                                    <strong>
+                                        {% if result.ablation.cluster_fallback.r2 is not None %}
+                                            {{ result.ablation.cluster_fallback.r2|floatformat:4 }}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </strong>
+                                </div>
+                            </div>
+
+                            <div class="terminal-header">
+                                Evidence note
+                            </div>
+
+                            <p class="muted terminal-text">
+                                &gt; {{ result.ablation.note }}
+                            </p>
+
+                        {% else %}
+                            <p class="muted">
+                                {{ result.ablation.message }}
+                            </p>
+
+                            <div class="terminal-text">
+                                Run:
+                                <br>
+                                python run_cluster_ablation.py
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="card full fade-in">
+                        <div class="card-kicker">
                             Operational Impact Comparison
                         </div>
 
@@ -949,7 +1041,7 @@
                             Model Uncertainty
                         </div>
 
-                        <h2>Estimated uncertainty (±1 RMSE)</h2>
+                        <h2>{{ result.confidence.label }}</h2>
 
                         <div class="kv">
                             <span>Expected Incidents</span>
@@ -977,7 +1069,15 @@
                         </div>
 
                         <p class="muted terminal-text">
-                            &gt; {{ result.confidence.method }}. This range is based on historical validation error and should be treated as an uncertainty estimate, not a guaranteed prediction interval.
+                            &gt; {{ result.confidence.method }}.
+                            {% if result.confidence.type == "catboost_quantile" %}
+                                This interval uses CatBoost lower and upper quantile regressors.
+                                {% if result.confidence.coverage %}
+                                    Holdout coverage: {{ result.confidence.coverage|floatformat:3 }}.
+                                {% endif %}
+                            {% else %}
+                                This is a validation-error based estimate, not a guaranteed statistical interval.
+                            {% endif %}
                         </p>
                     </div>
 

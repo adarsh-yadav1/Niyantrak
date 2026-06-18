@@ -1,0 +1,86 @@
+{
+    "title": "Cluster Fallback Ablation Study",
+    "generated_at": "2026-06-19T01:58:58.321090",
+    "rows_tested": 5000,
+    "rows_skipped": 0,
+    "normal_profile": {
+        "label": "Corridor-hour profile",
+        "mae": 0.15365189554146727,
+        "rmse": 0.4653232264341012,
+        "r2": 0.087993945086982
+    },
+    "cluster_fallback": {
+        "label": "Forced spatial cluster fallback",
+        "mae": 0.2384351663936206,
+        "rmse": 0.5153083643261315,
+        "r2": -0.11846563254989495
+    },
+    "comparison": {
+        "mae_delta": -0.08478327085215334,
+        "mae_improvement_pct": -55.17879916377094,
+        "better_method": "corridor_hour_profile"
+    },
+    "source_counts": {
+        "normal": {
+            "exact inferred corridor-hour history": 4574,
+            "spatial cluster-hour fallback history": 426
+        },
+        "cluster": {
+            "exact spatial cluster-hour profile": 5000
+        }
+    },
+    "examples": [
+        {
+            "corridor": "Bellary Road 1",
+            "hour": 19,
+            "actual": 1.0,
+            "normal_prediction": 0.678,
+            "cluster_prediction": 0.443,
+            "normal_source": "exact inferred corridor-hour history",
+            "cluster_source": "exact spatial cluster-hour profile",
+            "spatial_cluster_id": 1
+        },
+        {
+            "corridor": "Hennur Main Road",
+            "hour": 18,
+            "actual": 0.0,
+            "normal_prediction": 0.0,
+            "cluster_prediction": 0.292,
+            "normal_source": "exact inferred corridor-hour history",
+            "cluster_source": "exact spatial cluster-hour profile",
+            "spatial_cluster_id": 2
+        },
+        {
+            "corridor": "West of Chord Road",
+            "hour": 3,
+            "actual": 0.0,
+            "normal_prediction": 0.0,
+            "cluster_prediction": 0.432,
+            "normal_source": "exact inferred corridor-hour history",
+            "cluster_source": "exact spatial cluster-hour profile",
+            "spatial_cluster_id": 29
+        },
+        {
+            "corridor": "Varthur Road",
+            "hour": 2,
+            "actual": 0.0,
+            "normal_prediction": 0.0,
+            "cluster_prediction": 0.0,
+            "normal_source": "exact inferred corridor-hour history",
+            "cluster_source": "exact spatial cluster-hour profile",
+            "spatial_cluster_id": 13
+        },
+        {
+            "corridor": "West of Chord Road",
+            "hour": 19,
+            "actual": 0.0,
+            "normal_prediction": 0.113,
+            "cluster_prediction": 0.836,
+            "normal_source": "exact inferred corridor-hour history",
+            "cluster_source": "exact spatial cluster-hour profile",
+            "spatial_cluster_id": 29
+        }
+    ],
+    "conclusion": "Cluster fallback was weaker than corridor-hour history on this holdout comparison. It should be used only when corridor matching is weak or unavailable.",
+    "note": "This ablation compares normal corridor-hour historical profiles against forced spatial-cluster fallback profiles on a chronological holdout sample. It is used to validate whether the fallback mechanism is reasonable for weak or unknown locations."
+}
