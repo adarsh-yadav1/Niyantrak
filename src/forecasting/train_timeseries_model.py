@@ -13,6 +13,7 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
     f1_score,
+    accuracy_score,
     roc_auc_score,
     average_precision_score
 )
@@ -377,6 +378,10 @@ def evaluate_hurdle_model(
         alert_pred,
         zero_division=0
     )
+    alert_accuracy = accuracy_score(
+        y_alert,
+        alert_pred
+    )
 
     try:
 
@@ -405,6 +410,7 @@ def evaluate_hurdle_model(
         "rmse": float(rmse),
         "r2": float(r2),
 
+        "alert_accuracy": float(alert_accuracy),
         "alert_precision": float(precision),
         "alert_recall": float(recall),
         "alert_f1": float(alert_f1),
@@ -512,6 +518,7 @@ def train_timeseries_model(
     print("ALERT CLASSIFICATION RESULTS")
     print("-" * 60)
 
+    print(f"Accuracy         : {metrics['alert_accuracy']:.4f}")
     print(f"Precision        : {metrics['alert_precision']:.4f}")
     print(f"Recall           : {metrics['alert_recall']:.4f}")
     print(f"F1               : {metrics['alert_f1']:.4f}")

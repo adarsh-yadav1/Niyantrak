@@ -831,6 +831,19 @@ def predict_event_impact(
             {}
         )
 
+    model_metrics = {
+        "mae": holdout_metrics.get("mae"),
+        "rmse": holdout_metrics.get("rmse"),
+        "r2": holdout_metrics.get("r2"),
+
+        "alert_accuracy": holdout_metrics.get("alert_accuracy"),
+        "alert_precision": holdout_metrics.get("alert_precision"),
+        "alert_recall": holdout_metrics.get("alert_recall"),
+        "alert_f1": holdout_metrics.get("alert_f1"),
+        "roc_auc": holdout_metrics.get("roc_auc"),
+        "pr_auc": holdout_metrics.get("pr_auc"),
+    }
+
     return {
         "input": {
             "event_type": event_type,
@@ -914,7 +927,7 @@ def predict_event_impact(
 
         "diversion": diversion,
 
-        "metrics": holdout_metrics,
+        "metrics": model_metrics,
 
         "map": {
             "latitude": latitude,

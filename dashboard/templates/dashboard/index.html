@@ -686,7 +686,96 @@
                         </div>
                     </div>
 
-                    <div class="card full fade-in" style="animation-delay: 0.4s;">
+                    <div class="card fade-in" style="animation-delay: 0.4s;">
+                        <div class="card-kicker">
+                            Model Performance
+                        </div>
+
+                        <h2>CatBoost Validation Metrics</h2>
+
+                        <div class="kv">
+                            <span>MAE</span>
+                            <strong class="mono">
+                                {% if result.metrics.mae is not None %}
+                                    {{ result.metrics.mae|floatformat:4 }}
+                                {% else %}
+                                    Not available
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>R² Score</span>
+                            <strong class="mono">
+                                {% if result.metrics.r2 is not None %}
+                                    {{ result.metrics.r2|floatformat:4 }}
+                                {% else %}
+                                    Not available
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Alert Accuracy</span>
+                            <strong class="mono">
+                                {% if result.metrics.alert_accuracy is not None %}
+                                    {{ result.metrics.alert_accuracy|floatformat:4 }}
+                                {% else %}
+                                    Retrain required
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Alert Recall</span>
+                            <strong class="mono">
+                                {% if result.metrics.alert_recall is not None %}
+                                    {{ result.metrics.alert_recall|floatformat:4 }}
+                                {% else %}
+                                    Not available
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Alert F1</span>
+                            <strong class="mono">
+                                {% if result.metrics.alert_f1 is not None %}
+                                    {{ result.metrics.alert_f1|floatformat:4 }}
+                                {% else %}
+                                    Not available
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>ROC-AUC</span>
+                            <strong class="mono">
+                                {% if result.metrics.roc_auc is not None %}
+                                    {{ result.metrics.roc_auc|floatformat:4 }}
+                                {% else %}
+                                    Not available
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>PR-AUC</span>
+                            <strong class="mono">
+                                {% if result.metrics.pr_auc is not None %}
+                                    {{ result.metrics.pr_auc|floatformat:4 }}
+                                {% else %}
+                                    Not available
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <p class="muted terminal-text">
+                            &gt; Hurdle model: CatBoost classifier predicts incident likelihood, CatBoost regressor estimates positive incident count.
+                        </p>
+                    </div>
+
+                    <div class="card full fade-in" style="animation-delay: 0.5s;">
                         <div class="card-kicker">
                             Final Recommendation
                         </div>
