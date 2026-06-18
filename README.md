@@ -1,238 +1,180 @@
-# ML System Documentation — Event-Driven Traffic Intelligence Engine
+# Updated ML System Architecture — Coordinate-First Event-Driven Traffic Intelligence Engine
 
-## 1. System Purpose
+## 1. Project Goal
 
-This machine learning system is designed to support traffic operations during planned and unplanned events.
+This system predicts and explains event-driven traffic impact for Bengaluru traffic operations.
 
-The system answers this operational question:
+The system is designed to answer:
 
 ```text
-Given a corridor, timestamp, and live event details,
-how risky is the traffic situation and what operational response is needed?
+If an accident, rally, breakdown, VIP movement, public event, protest, congestion, or road closure happens at a precise map location, what will be the traffic impact and what operational response is needed?
 ```
 
-The output is not only a prediction. It is a decision-support result.
-
-The ML system produces:
+The system outputs:
 
 ```text
 Predicted incident volume
+Incident prediction range
 Forecast risk score
-Forecast risk level
-Live event impact score
-Live event impact level
-Final operational risk score
+Event Impact Score
+Composite EIS score
 Final operational risk level
-Officer requirement
+Affected map radius
+Secondary spillover radius
+Officer deployment
 Barricade requirement
-Diversion recommendation
-Affected duration estimate
-Historical context used
+Diversion routes
+Historical similar events
+Post-event feedback storage
+Deployment order message
 ```
 
-The system is built for event-driven congestion cases such as:
-
-```text
-accident
-vehicle breakdown
-congestion
-VIP movement
-public event
-protest
-procession
-construction
-water logging
-road closure
-heavy vehicle involvement
-```
+The system is no longer dependent on the user knowing a corridor name. The user can click on the map or enter latitude/longitude, and the system infers the corridor internally.
 
 ---
 
-## 2. High-Level ML Architecture
-
-The final ML system is a hybrid architecture.
-
-It combines:
+# 2. Updated High-Level Architecture
 
 ```text
-Historical machine learning forecast
-+
+User clicks map / enters coordinates
+        ↓
+Latitude + longitude captured
+        ↓
+Bengaluru coordinate validation
+        ↓
+Nearest corridor resolver
+        ↓
+Nearest KMeans spatial cluster resolver
+        ↓
+Nearest hotspot + spatial density calculation
+        ↓
+Feature store fallback selection
+        ↓
+Zero-inflated hurdle forecast model
+        ↓
+Forecast risk score
+        ↓
 Live event impact scoring
-+
-Operational decision rules
+        ↓
+Crowd + weather adjustment
+        ↓
+Composite Event Impact Score
+        ↓
+Final operational risk
+        ↓
+Resource recommendation
+        ↓
+Diversion recommendation
+        ↓
+Impact map circles
+        ↓
+Similar historical events
+        ↓
+Deployment order
+        ↓
+Post-event feedback loop
 ```
 
-Full ML pipeline:
+The new system is now **coordinate-first**, not corridor-first.
+
+Old flow:
 
 ```text
-Raw Traffic Event Dataset
+User selects corridor manually
         ↓
-Data Loading and Validation
-        ↓
-Time-Series Dataset Construction
-        ↓
-Feature Engineering
-        ↓
-Zero-Inflated Hurdle Forecast Model
-        ↓
-Model Evaluation
-        ↓
-Feature Importance
-        ↓
-Feature Store Generation
-        ↓
-Live Prediction Input
-        ↓
-Forecast Risk Calculation
-        ↓
-Event Impact Calculation
-        ↓
-Final Operational Risk Calculation
-        ↓
-Resource Recommendation
-        ↓
-Diversion Recommendation
+Model predicts using corridor
 ```
 
-The core idea is:
+New flow:
 
 ```text
-Historical data tells what usually happens.
-Live event information tells what is happening now.
-Final operational risk combines both.
+User selects exact location on map
+        ↓
+System infers corridor + spatial cluster
+        ↓
+Model predicts using inferred location intelligence
 ```
 
 ---
 
-## 3. Why We Did Not Use Only One Regression Model
+# 3. Why This Upgrade Was Needed
 
-The dataset is sparse.
+Earlier, the system depended too much on `corridor`.
 
-The target distribution showed:
+Problem:
 
 ```text
-incident_count
-0.0     74072
-1.0      4133
-2.0       817
-3.0       245
-4.0       104
-5.0        35
-6.0        17
-7.0        10
-8.0         6
-13.0        5
-12.0        4
-10.0        3
-22.0        2
-14.0        2
-9.0         2
+If user entered an unknown corridor:
+    lag_1 = 0
+    lag_24 = 0
+    rolling_6 = 0
+    rolling_24 = 0
+    corridor_avg = 0
+    prediction became weak or meaningless
 ```
 
-Zero ratio:
+This was a major gap because real traffic events can occur:
 
 ```text
-0.9321
+between known corridors
+near junctions
+near service roads
+near unknown locations
+at event venues
+near temporary public gatherings
 ```
 
-This means around:
+So we upgraded the system to use:
 
 ```text
-93.21% of corridor-hour rows have zero incidents.
+latitude
+longitude
+nearest corridor
+nearest spatial cluster
+nearest hotspot distance
+spatial density
+cluster-hour fallback profiles
 ```
 
-This is not a normal regression problem.
+Now unknown locations do not collapse to all-zero historical features.
 
-A simple model that predicts exact incident count will struggle because:
+---
 
-```text
-Most rows are zero.
-Positive rows are rare.
-Large spikes are very rare.
-R² becomes misleading.
-A small number of missed spikes can heavily damage R².
-```
+# 4. Updated System Components
 
-So we changed the architecture from:
+The updated project has these major ML/backend intelligence components:
 
 ```text
-Single CatBoostRegressor
-```
-
-to:
-
-```text
-Zero-Inflated Hurdle Forecast Model
+1. Data loading
+2. Time-series dataset generation
+3. Zero-inflated hurdle forecasting model
+4. Feature store generation
+5. Coordinate resolver
+6. KMeans spatial fallback
+7. Forecast risk scoring
+8. Event impact scoring
+9. EIS scoring
+10. Crowd/weather adjustment
+11. Pre-event vs post-event comparison
+12. Map impact visualization
+13. Historical similar event lookup
+14. Confidence interval estimation
+15. Deployment order generator
+16. Post-event learning feedback store
 ```
 
 ---
 
-## 4. Final ML Model Type
+# 5. Updated File Architecture
 
-The final forecasting model is a **zero-inflated hurdle model**.
-
-It has two stages:
-
-```text
-Stage 1: CatBoostClassifier
-Predict whether any incident is likely.
-
-Stage 2: CatBoostRegressor
-Predict expected incident count only for positive incident situations.
-```
-
-Final count prediction:
-
-```text
-expected_count = probability_strength × positive_count_prediction
-```
-
-Where:
-
-```text
-probability_strength = calibrated strength above alert threshold
-```
-
-This avoids predicting small incident counts for many zero rows.
-
----
-
-## 5. Why Zero-Inflated Hurdle Model Is Suitable
-
-Traffic incident forecasting has many zero values.
-
-Example:
-
-```text
-Most corridor-hours have no event.
-Some corridor-hours have 1 event.
-Rare corridor-hours have multiple incidents.
-```
-
-A zero-inflated model handles this better because it separates two questions:
-
-```text
-Question 1:
-Will anything happen?
-
-Question 2:
-If something happens, how much?
-```
-
-This is better than forcing one regressor to learn both zero-detection and count estimation.
-
----
-
-## 6. Active ML File Architecture
-
-The active ML system uses these files:
+## Active ML / Intelligence Files
 
 ```text
 config.py
-
 train_all.py
 prepare_feature_store.py
 predict.py
+health_check.py
 
 src/preprocessing/load_data.py
 
@@ -243,21 +185,26 @@ src/forecasting/forecast_predictor.py
 src/forecasting/forecast_feature_importance.py
 
 src/inference/feature_store.py
+src/inference/location_resolver.py
 src/inference/predict_traffic_risk.py
+src/inference/similar_events.py
 
 src/scoring/event_impact.py
 src/scoring/risk_score.py
 
 src/routing/diversion_engine.py
+
+dashboard/services/ml_engine.py
+dashboard/services/feedback_store.py
+dashboard/views.py
+dashboard/urls.py
+dashboard/templates/dashboard/index.html
+dashboard/static/dashboard/style.css
 ```
 
-These files form the current final ML pipeline.
+## Optional Old Severity Classifier Files
 
----
-
-## 7. Optional Old Severity Classifier Files
-
-These files exist but are not part of the current final prediction flow:
+These are not required for the final flow:
 
 ```text
 src/preprocessing/create_target.py
@@ -270,765 +217,217 @@ src/training/feature_importance.py
 src/training/shap_analysis.py
 ```
 
-These were originally used for a severity classification model.
-
-That older model predicted:
-
-```text
-LOW
-MODERATE
-HIGH
-CRITICAL
-```
-
-from event features.
-
-The current final system instead uses:
-
-```text
-forecast model
-+
-event impact scoring
-+
-final operational risk scoring
-```
-
-So the old severity classifier is optional and not required for the final dashboard or terminal predictor.
+The final project uses the forecasting model + scoring engine, not the old severity classifier.
 
 ---
 
-# Part A — Data Layer
+# 6. Main Commands
 
-## 8. Dataset Input
+## Train forecasting model
 
-The system expects a traffic event dataset.
+```bash
+python train_all.py
+```
+
+This creates:
+
+```text
+models/timeseries_forecast_model.pkl
+models/timeseries_forecast.pkl
+forecast_feature_importance.png
+```
+
+## Prepare coordinate-aware feature store
+
+```bash
+python prepare_feature_store.py
+```
+
+This creates:
+
+```text
+models/traffic_feature_store.pkl
+```
+
+## Run terminal predictor
+
+```bash
+python predict.py
+```
+
+## Run dashboard
+
+```bash
+python manage.py runserver
+```
+
+## Run project health check
+
+```bash
+python health_check.py
+```
+
+---
+
+# 7. Data Layer
+
+The dataset is event-based.
+
+Each row means:
+
+```text
+one traffic incident / traffic event
+```
 
 Important columns:
 
 ```text
 start_datetime
-corridor
+end_datetime
+event_type
+event_cause
 latitude
 longitude
-zone
-junction
-event_cause
-requires_road_closure
-veh_type
-```
-
-Useful optional columns:
-
-```text
-event_type
-priority
-police_station
-end_datetime
 endlatitude
 endlongitude
+corridor
+zone
+junction
+veh_type
+requires_road_closure
+priority
+police_station
 ```
 
-Each row in the raw dataset represents one event or traffic incident.
-
-Example:
-
-```text
-event_cause = vehicle_breakdown
-corridor = ORR East 1
-start_datetime = 2024-03-01 09:15
-latitude = 12.9200
-longitude = 77.6200
-veh_type = bmtc_bus
-requires_road_closure = False
-```
+The model converts this raw event data into a corridor-hour time-series dataset.
 
 ---
 
-## 9. `config.py`
+# 8. Time-Series Dataset Builder
+
+File:
+
+```text
+src/forecasting/build_timeseries_dataset.py
+```
 
 Purpose:
 
 ```text
-Stores common project paths.
+Convert raw event rows into corridor-hour training rows.
 ```
 
-Main variables:
-
-```python
-DATA_PATH = "data/traffic_events.csv"
-
-FORECAST_MODEL_PATH = "models/timeseries_forecast.pkl"
-
-FORECAST_MODEL_COMPAT_PATH = "models/timeseries_forecast_model.pkl"
-
-FEATURE_STORE_PATH = "models/traffic_feature_store.pkl"
-
-FORECAST_FEATURE_IMPORTANCE_PATH = "forecast_feature_importance.png"
-```
-
-Why this matters:
-
-```text
-All major scripts use the same path configuration.
-It prevents path mismatch between training and inference.
-```
-
----
-
-## 10. `src/preprocessing/load_data.py`
-
-Purpose:
-
-```text
-Load dataset safely.
-Validate file path.
-Print dataset shape.
-Print dataset columns.
-Warn about missing important columns.
-```
-
-Supported formats:
-
-```text
-CSV
-Excel
-Parquet
-```
-
-This is the first checkpoint in the ML system.
-
-It verifies that the data exists and has the required schema before downstream processing begins.
-
----
-
-## 11. Datetime Safety
-
-The project encountered a possible timezone bug:
-
-```text
-Cannot compare tz-naive and tz-aware timestamps.
-```
-
-This happens when some timestamps have timezone information and some do not.
-
-Example:
-
-```text
-2024-03-01 09:00:00
-2024-03-01 09:00:00+00:00
-```
-
-Fix used in the active forecasting pipeline:
-
-```python
-pd.to_datetime(series, errors="coerce", utc=True).dt.tz_convert(None)
-```
-
-This converts all timestamps to UTC and strips timezone information.
-
-Result:
-
-```text
-All datetime values become comparable and sortable.
-```
-
-This is important because the forecasting model uses chronological train/test splits.
-
----
-
-# Part B — Time-Series Dataset Builder
-
-## 12. `src/forecasting/build_timeseries_dataset.py`
-
-This is one of the most important ML files.
-
-Purpose:
-
-```text
-Convert raw event-level records into corridor-hour time-series data.
-```
-
-Raw data format:
+Raw format:
 
 ```text
 one row = one event
 ```
 
-Model training format:
+Training format:
 
 ```text
 one row = one corridor-hour
 ```
 
-Example transformation:
+Example:
 
 ```text
 Raw:
-ORR East 1, 2024-03-01 09:15, accident
-ORR East 1, 2024-03-01 09:40, congestion
+ORR East 1 | 2024-04-01 09:12 | accident
+ORR East 1 | 2024-04-01 09:47 | congestion
 
 After aggregation:
-ORR East 1, 2024-03-01 09:00, incident_count = 2
+ORR East 1 | 2024-04-01 09:00 | incident_count = 2
 ```
 
 ---
 
-## 13. Time Bucket Creation
+# 9. Full Corridor-Hour Grid
 
-The file creates:
-
-```text
-time_bucket
-```
-
-using hourly flooring:
-
-```python
-df["time_bucket"] = df["start_datetime"].dt.floor("h")
-```
-
-Example:
+One important fix was creating a full grid:
 
 ```text
-2024-03-01 09:15 → 2024-03-01 09:00
-2024-03-01 09:59 → 2024-03-01 09:00
-```
-
----
-
-## 14. Corridor-Hour Aggregation
-
-The system groups by:
-
-```text
-time_bucket
-corridor
-```
-
-and counts events:
-
-```text
-incident_count
-```
-
-Example:
-
-```text
-corridor       time_bucket           incident_count
-ORR East 1     2024-03-01 09:00      2
-Mysore Road    2024-03-01 09:00      1
-CBD 1          2024-03-01 09:00      0
-```
-
----
-
-## 15. Full Corridor-Hour Grid
-
-A major improvement was creating a full grid:
-
-```text
-all corridors × all hourly timestamps
+all corridors × all hours
 ```
 
 Why?
 
-If only event hours are kept, the model never learns normal quiet periods.
-
-Bad version:
-
-```text
-Only rows where incidents occurred.
-```
-
-Correct version:
-
-```text
-Every corridor-hour exists.
-If no incident happened, incident_count = 0.
-```
-
-This created realistic sparse data.
-
-That is why zero ratio became:
-
-```text
-93.21%
-```
-
-This is expected and correct.
-
----
-
-## 16. Time Features
-
-For each corridor-hour row, we create:
-
-```text
-hour
-weekday
-month
-```
-
-Examples:
-
-```text
-hour = 9
-weekday = 4
-month = 4
-```
-
-These allow the model to learn traffic patterns by time.
-
----
-
-## 17. Cyclic Hour Encoding
-
-The model also uses:
-
-```text
-hour_sin
-hour_cos
-```
-
-Formula:
-
-```text
-hour_sin = sin(2π × hour / 24)
-hour_cos = cos(2π × hour / 24)
-```
-
-Why?
-
-Time is cyclic.
-
-Numerically:
-
-```text
-23 and 0 look far apart.
-```
-
-But in reality:
-
-```text
-23:00 and 00:00 are close.
-```
-
-Sine/cosine encoding solves this.
-
----
-
-## 18. Lag Features
-
-The time-series dataset creates corridor-specific lag features:
-
-```text
-lag_1
-lag_2
-lag_3
-lag_24
-lag_48
-lag_72
-lag_168
-```
-
-Meaning:
-
-```text
-lag_1   = incidents in previous hour on same corridor
-lag_24  = same hour yesterday on same corridor
-lag_168 = same hour last week on same corridor
-```
-
-Important:
-
-```text
-Lags are grouped by corridor.
-```
-
-So:
-
-```text
-ORR East 1 lag_1 does not use Mysore Road's previous value.
-```
-
-This prevents wrong temporal relationships.
-
----
-
-## 19. Rolling Features
-
-Rolling averages:
-
-```text
-rolling_6
-rolling_12
-rolling_24
-rolling_168
-```
-
-Meaning:
-
-```text
-rolling_6   = average incidents in previous 6 hours
-rolling_24  = average incidents in previous 24 hours
-rolling_168 = average incidents in previous 7 days
-```
-
-Important anti-leakage rule:
-
-```text
-shift first, then rolling
-```
-
-Reason:
-
-```text
-The current row's incident_count must not be included in its own features.
-```
+If only incident hours are kept, the model never learns normal quiet conditions.
 
 Correct logic:
 
 ```text
-previous values only → rolling mean
+If no incident occurred in a corridor-hour, incident_count = 0
 ```
 
-This prevents target leakage.
+This created the true sparse traffic dataset.
+
+Your target distribution showed:
+
+```text
+93%+ rows are zero incidents
+```
+
+This is why we use a zero-inflated model.
 
 ---
 
-## 20. Corridor Statistics
+# 10. Datetime Safety
 
-The dataset includes:
-
-```text
-corridor_avg
-corridor_volatility
-```
-
-`corridor_avg` means:
-
-```text
-average historical incident count for that corridor
-```
-
-`corridor_volatility` means:
-
-```text
-how unstable or spiky the corridor is
-```
-
-A corridor with high volatility may have sudden spikes.
-
----
-
-## 21. Spatial and Risk Features
-
-The dataset builder also creates:
-
-```text
-zone_risk
-junction_risk
-cause_risk
-closure_risk
-cluster_risk
-```
-
-### zone_risk
-
-Counts historical event activity in a zone.
-
-### junction_risk
-
-Counts historical event activity near junctions.
-
-Junctions are important because they are bottlenecks.
-
-### cause_risk
-
-Captures frequency or risk associated with event causes.
-
-### closure_risk
-
-Captures historical relationship between road closure and incidents.
-
-### cluster_risk
-
-Uses spatial clustering information to capture hotspot density.
-
-These are added so the forecast model does not rely only on time.
-
----
-
-# Part C — Forecast Features
-
-## 22. Final Forecast Feature Set
-
-The final forecasting model uses:
-
-```text
-corridor
-
-hour
-weekday
-month
-
-hour_sin
-hour_cos
-
-lag_1
-lag_2
-lag_3
-lag_24
-lag_48
-lag_72
-lag_168
-
-rolling_6
-rolling_12
-rolling_24
-rolling_168
-
-corridor_avg
-corridor_volatility
-
-zone_risk
-junction_risk
-cause_risk
-closure_risk
-cluster_risk
-```
-
-Target:
-
-```text
-incident_count
-```
-
----
-
-## 23. Feature Meaning Summary
-
-| Feature                | Meaning                            |
-| ---------------------- | ---------------------------------- |
-| `corridor`             | Traffic corridor name              |
-| `hour`                 | Hour of day                        |
-| `weekday`              | Day of week                        |
-| `month`                | Month number                       |
-| `hour_sin`, `hour_cos` | Cyclic time encoding               |
-| `lag_1`                | Previous hour incident count       |
-| `lag_24`               | Same hour previous day             |
-| `lag_168`              | Same hour previous week            |
-| `rolling_6`            | Previous 6-hour average            |
-| `rolling_24`           | Previous 24-hour average           |
-| `rolling_168`          | Previous 7-day average             |
-| `corridor_avg`         | Average incident level of corridor |
-| `corridor_volatility`  | Spike tendency of corridor         |
-| `zone_risk`            | Historical zone activity           |
-| `junction_risk`        | Historical junction activity       |
-| `cause_risk`           | Historical event-cause activity    |
-| `closure_risk`         | Road closure-related activity      |
-| `cluster_risk`         | Spatial hotspot activity           |
-
----
-
-# Part D — Model Training
-
-## 24. `src/forecasting/train_timeseries_model.py`
-
-This file trains the final ML forecast model.
-
-It performs:
-
-```text
-dataset validation
-chronological train/test split
-threshold calibration
-hurdle model training
-holdout evaluation
-production model training
-model saving
-```
-
----
-
-## 25. Chronological Split
-
-The system does not use random split.
-
-It sorts by:
-
-```text
-time_bucket
-corridor
-```
-
-Then splits by time:
-
-```text
-oldest 80% time buckets → train
-newest 20% time buckets → test
-```
-
-Why?
-
-Traffic forecasting is time-dependent.
-
-Random split would leak future patterns into the past.
-
-Chronological split simulates real deployment:
-
-```text
-train on past → predict future
-```
-
----
-
-## 26. Model Stage 1 — CatBoostClassifier
-
-Stage 1 predicts:
-
-```text
-incident_count > 0
-```
-
-So the target becomes:
-
-```text
-0 = no incident
-1 = incident
-```
-
-Model:
-
-```text
-CatBoostClassifier
-```
-
-Main settings:
-
-```text
-iterations = 700
-depth = 6
-learning_rate = 0.03
-loss_function = Logloss
-eval_metric = AUC
-auto_class_weights = Balanced
-```
-
-Why balanced class weights?
-
-Because positives are rare:
-
-```text
-Only around 6.79% rows are positive.
-```
-
-Without balancing, the model might learn to predict zero too often.
-
----
-
-## 27. Model Stage 2 — CatBoostRegressor
-
-Stage 2 trains only on positive rows:
-
-```text
-incident_count > 0
-```
-
-Target is transformed using:
-
-```text
-log1p(incident_count)
-```
-
-Why log transform?
-
-Incident counts are skewed.
-
-Example:
-
-```text
-1 incident is common.
-10+ incidents are rare.
-```
-
-Log transform reduces spike dominance.
-
-Prediction is converted back using:
-
-```text
-expm1(prediction)
-```
-
----
-
-## 28. Hurdle Model Bundle
-
-The model is saved as a bundle:
-
-```text
-classifier
-regressor
-alert_threshold
-positive_count_mean
-features
-cat_features
-model_type
-```
-
-The bundle type is:
-
-```text
-zero_inflated_hurdle_v1
-```
-
-Because this is not a single model, we added:
-
-```text
-HurdleModelBundle
-```
-
-This behaves like a dictionary but supports:
+The pipeline normalizes timestamps using:
 
 ```python
-model.predict(X)
+pd.to_datetime(series, errors="coerce", utc=True).dt.tz_convert(None)
 ```
 
-This solves compatibility with test code and old inference expectations.
+This prevents:
+
+```text
+Cannot compare tz-naive and tz-aware timestamps
+```
+
+So mixed timezone formats will not break sorting or time splitting.
 
 ---
 
-## 29. `src/forecasting/forecast_predictor.py`
+# 11. Forecast Model Architecture
 
-This file handles prediction from the hurdle model.
+The final forecasting model is a **zero-inflated hurdle model**.
 
-Main function:
-
-```python
-predict_forecast_count(model_bundle, X)
-```
-
-It returns:
+It has two stages:
 
 ```text
-expected_count
-raw_expected_count
-alert_probability
-alert_prediction
-positive_count_prediction
-model_type
+Stage 1:
+CatBoostClassifier predicts whether incident_count > 0
+
+Stage 2:
+CatBoostRegressor predicts count only for positive incident rows
 ```
 
-It supports:
+This is better than a normal regressor because:
 
 ```text
-new hurdle model bundle
-old single regressor fallback
+most corridor-hour rows have zero incidents
+positive events are rare
+traffic spikes are rare
+plain regression overpredicts or underpredicts sparse events
 ```
 
 ---
 
-## 30. Threshold-Gated Count Prediction
+# 12. Hurdle Model Prediction Logic
+
+The model first predicts:
+
+```text
+alert_probability = P(incident_count > 0)
+```
+
+Then predicts positive count:
+
+```text
+positive_count_prediction = expected incident count if incident occurs
+```
 
 Old formula:
 
@@ -1039,12 +438,10 @@ expected_count = alert_probability × positive_count_prediction
 Problem:
 
 ```text
-This overpredicted many zero rows.
+Even small probabilities created small false incident counts for many zero rows.
 ```
 
-Because with 93% zeros, even small probabilities create false counts.
-
-New formula:
+Updated formula:
 
 ```text
 probability_strength =
@@ -1056,50 +453,31 @@ expected_count =
     probability_strength × positive_count_prediction
 ```
 
-Then clipped to:
+If probability is below threshold, count is near zero.
 
-```text
-0 to 1 strength range
-```
-
-So:
-
-```text
-alert_probability below threshold → expected_count close to 0
-alert_probability above threshold → count starts increasing
-```
-
-This improved count prediction.
+This is important because the dataset is extremely sparse.
 
 ---
 
-## 31. Alert Threshold Calibration
+# 13. Alert Threshold Calibration
 
-The system tunes alert threshold using:
-
-```text
-F2 score
-```
+The model uses F2-based threshold tuning.
 
 Why F2?
 
-F2 gives more importance to recall.
-
-Traffic operations prefer:
-
 ```text
-catch more real incidents
+F2 gives more importance to recall than precision.
 ```
 
-even if some extra alerts happen.
-
-Reason:
+For traffic operations:
 
 ```text
-Missing a real accident is worse than giving an early warning.
+Missing a real incident is worse than raising an early warning.
 ```
 
-Latest calibrated threshold:
+So the model is tuned to catch more real incident hours.
+
+Recent threshold:
 
 ```text
 0.55
@@ -1107,376 +485,131 @@ Latest calibrated threshold:
 
 ---
 
-# Part E — Model Evaluation
+# 14. Model Metrics
 
-## 32. `src/forecasting/cross_validate_timeseries.py`
-
-This file performs time-series cross-validation.
-
-It splits data by time buckets, not random rows.
-
-For every fold:
+Recent useful model quality:
 
 ```text
-train on earlier time range
-test on later time range
+MAE              : around 0.15
+RMSE             : around 0.49
+R²               : around 0.23
+
+Alert Recall     : around 0.71
+ROC-AUC          : around 0.85
+PR-AUC           : around 0.42
 ```
 
-Metrics:
+These are shown on the dashboard through the **Model Performance** panel.
+
+Meaning:
 
 ```text
-MAE
-RMSE
-R²
-Precision
-Recall
-Alert F1
-ROC-AUC
-PR-AUC
-```
-
----
-
-## 33. Latest Cross-Validation Result
-
-Latest mean cross-validation:
-
-```text
-Mean MAE       : 0.1007
-Mean RMSE      : 0.5118
-Mean R²        : 0.1523
-Mean Precision : 0.3764
-Mean Recall    : 0.3987
-Mean Alert F1  : 0.3865
-Mean ROC-AUC   : 0.8458
-Mean PR-AUC    : 0.3795
-```
-
-Interpretation:
-
-```text
-MAE is low.
-ROC-AUC is strong.
-PR-AUC is strong for a rare-positive problem.
-R² is modest because incident spikes are rare and hard to predict.
+MAE tells count prediction error.
+R² is modest because sparse event spikes are hard to predict.
+Recall tells how many real incident hours were caught.
+ROC-AUC tells ranking ability.
+PR-AUC is important because positive incident rows are rare.
 ```
 
 ---
 
-## 34. Latest Holdout Result After F2 Tuning
+# 15. HurdleModelBundle Compatibility
 
-Latest holdout:
-
-```text
-MAE              : 0.1548
-RMSE             : 0.4890
-R²               : 0.2340
-
-Precision        : 0.2242
-Recall           : 0.7124
-F1               : 0.3410
-ROC-AUC          : 0.8541
-PR-AUC           : 0.4217
-```
-
----
-
-## 35. Metric Interpretation
-
-### MAE = 0.1548
-
-Average absolute error:
+File:
 
 ```text
-around 0.15 incidents per corridor-hour
+src/forecasting/forecast_predictor.py
 ```
-
-This is good for sparse count forecasting.
-
-### R² = 0.2340
-
-R² is positive but not high.
-
-Reason:
-
-```text
-rare spikes are difficult to predict from incident history alone
-```
-
-This is expected.
-
-### ROC-AUC = 0.8541
-
-This is strong.
-
-It means:
-
-```text
-the model ranks risky corridor-hours higher than quiet corridor-hours well
-```
-
-### PR-AUC = 0.4217
-
-This is strong for a positive rate of around 6.79%.
-
-Random baseline PR-AUC would be approximately:
-
-```text
-0.0679
-```
-
-So:
-
-```text
-0.4217 is much better than random
-```
-
-### Recall = 0.7124
-
-This means:
-
-```text
-the system catches around 71% of actual incident hours
-```
-
-This is important for operations.
-
-### Precision = 0.2242
-
-This means:
-
-```text
-not every alert becomes an actual incident
-```
-
-But this is acceptable because traffic operations prefer early warning over missed incidents.
-
----
-
-## 36. Why R² Is Not the Main Metric
-
-For sparse event forecasting, R² can be misleading.
-
-Reasons:
-
-```text
-Most values are zero.
-Few rows are positive.
-Spikes are rare.
-Missing a few spikes heavily hurts R².
-```
-
-Better operational metrics:
-
-```text
-MAE
-Recall
-ROC-AUC
-PR-AUC
-Alert F2
-Top-k alert precision
-```
-
-In this project, the model is judged mainly by:
-
-```text
-low MAE
-strong ROC-AUC
-strong PR-AUC
-high recall
-useful operational output
-```
-
----
-
-# Part F — Feature Importance
-
-## 37. `src/forecasting/forecast_feature_importance.py`
-
-This file explains which features matter.
-
-For the hurdle model, it combines:
-
-```text
-classifier feature importance
-regressor feature importance
-```
-
-Combined importance:
-
-```text
-0.55 × classifier_importance
-+
-0.45 × regressor_importance
-```
-
-This is because the classifier is slightly more important in sparse data.
-
-The system saves:
-
-```text
-forecast_feature_importance.png
-```
-
----
-
-## 38. Example Feature Importance
-
-Recent important features included:
-
-```text
-hour_cos
-hour_sin
-hour
-rolling_168
-lag_1
-corridor_avg
-weekday
-rolling_24
-corridor_volatility
-month
-rolling_6
-closure_risk
-junction_risk
-rolling_12
-lag_24
-zone_risk
-cause_risk
-lag_2
-lag_168
-cluster_risk
-```
-
-Interpretation:
-
-```text
-time patterns are important
-weekly patterns are important
-recent incident history is important
-corridor behavior matters
-spatial-risk features contribute
-```
-
----
-
-# Part G — Feature Store
-
-## 39. `src/inference/feature_store.py`
-
-The feature store is essential for live inference.
 
 Problem:
 
-The forecast model requires features like:
+The new model is not a single model. It is a bundle:
 
 ```text
-lag_1
-lag_24
-rolling_6
-corridor_avg
-junction_risk
-cause_risk
-cluster_risk
-```
-
-But at prediction time, the user only gives:
-
-```text
-corridor
-timestamp
-event details
-```
-
-So the feature store supplies historical values.
-
----
-
-## 40. Feature Store Contents
-
-The feature store saves:
-
-```text
+classifier
+regressor
+alert_threshold
 features
-profile_features
-corridor_hour_profiles
-corridor_profiles
-global_profile
-incident_p50
-incident_p75
-incident_p90
-incident_p95
-incident_p99
-corridors
+metrics
 ```
+
+But some code expects:
+
+```python
+model.predict(X)
+```
+
+Solution:
+
+```text
+HurdleModelBundle
+```
+
+It behaves like a dictionary but supports:
+
+```python
+model.predict(X)
+model.predict_details(X)
+model.predict_proba(X)
+```
+
+This solved the `.predict()` compatibility bug.
 
 ---
 
-## 41. Corridor-Hour Profile
+# 16. Feature Store Architecture
 
-Key format:
-
-```text
-corridor__hour
-```
-
-Example:
+File:
 
 ```text
-ORR East 1__9
-Mysore Road__20
-CBD 1__14
+src/inference/feature_store.py
 ```
 
-Each stores median historical values for the profile features.
+The feature store stores historical values needed at prediction time.
 
-Example stored values:
+Why needed?
+
+At prediction time, user gives:
+
+```text
+latitude
+longitude
+event cause
+vehicle type
+road closure
+crowd size
+weather
+```
+
+But the model needs:
 
 ```text
 lag_1
-lag_2
-lag_3
 lag_24
 rolling_6
 rolling_24
-rolling_168
 corridor_avg
-corridor_volatility
-zone_risk
 junction_risk
 cause_risk
 closure_risk
 cluster_risk
 ```
 
+The feature store fills those values.
+
 ---
 
-## 42. Fallback Strategy
+# 17. Original Corridor Profiles
 
-If exact corridor-hour profile exists:
-
-```text
-use exact corridor-hour history
-```
-
-If not:
+The feature store stores:
 
 ```text
-use nearest hour profile for same corridor
+corridor_hour_profiles
+corridor_profiles
+global_profile
 ```
 
-If corridor exists but no hour profile:
-
-```text
-use corridor-level fallback
-```
-
-If corridor is unknown:
-
-```text
-use global fallback
-```
-
-Fallback hierarchy:
+Fallback order:
 
 ```text
 exact corridor-hour
@@ -1485,92 +618,191 @@ corridor-level profile
 global profile
 ```
 
-This prevents prediction failure when a user enters a corridor/time combination not seen exactly in training.
+---
+
+# 18. New Coordinate-Aware Feature Store
+
+The updated feature store also stores:
+
+```text
+corridor_location_profiles
+corridor_location_points
+hotspot_points
+spatial_cluster_model
+spatial_cluster_centers
+spatial_cluster_hour_profiles
+spatial_cluster_profiles
+max_cause_risk
+```
+
+These make the system coordinate-aware.
 
 ---
 
-# Part H — Terminal Inference
+# 19. KMeans Spatial Cluster Fallback
 
-## 43. `src/inference/predict_traffic_risk.py`
+This is the most important new fix.
 
-This file runs terminal-based prediction.
-
-It asks for:
+If a coordinate cannot confidently map to a known corridor, the system uses:
 
 ```text
-corridor
-hour
-weekday
-month
-event_cause
-veh_type
-road closure flag
+nearest KMeans spatial cluster
 ```
 
-Then it performs:
+Then it uses cluster historical profiles:
 
 ```text
-load model
-load feature store
-resolve corridor
-build input row
-predict incident count
-calculate forecast risk
-calculate event impact
-calculate final risk
-recommend officers
-recommend barricades
-recommend diversion
-print report
+spatial_cluster_hour_profiles
+spatial_cluster_profiles
+```
+
+Fallback order after upgrade:
+
+```text
+1. exact inferred corridor-hour profile
+2. nearest inferred corridor-hour profile
+3. inferred corridor-level profile
+4. spatial cluster-hour profile
+5. nearest spatial cluster-hour profile
+6. spatial cluster-level profile
+7. global profile
+```
+
+For weak/unknown locations, cluster fallback can be preferred first.
+
+This prevents:
+
+```text
+unknown corridor → all lag values become 0
+```
+
+Now:
+
+```text
+unknown location → cluster history → meaningful lag/rolling values
 ```
 
 ---
 
-## 44. Model Prediction During Inference
+# 20. Coordinate Resolver
 
-The prediction uses:
+File:
+
+```text
+src/inference/location_resolver.py
+```
+
+It takes:
+
+```text
+latitude
+longitude
+feature_store
+```
+
+And returns:
 
 ```python
-predict_single_forecast(model, X)
+{
+    "corridor": "ORR East 1",
+    "matched_by": "nearest historical event point",
+    "distance_m": 420.5,
+    "confidence": "HIGH",
+    "spatial_cluster_id": 7,
+    "spatial_cluster_distance_m": 310.2,
+    "nearest_hotspot_distance_m": 180.4,
+    "spatial_density_at_point": 0.72
+}
 ```
 
-This returns:
+It calculates:
 
 ```text
-predicted_incidents
-forecast_details
-```
-
-`forecast_details` may include:
-
-```text
-alert_probability
-alert_prediction
-positive_count_prediction
-raw_expected_count
+valid coordinate check
+nearest historical event point
+nearest corridor centroid
+nearest spatial cluster
+nearest hotspot distance
+spatial density near point
 ```
 
 ---
 
-# Part I — Forecast Risk Scoring
+# 21. Corridor String Dependency Removed
 
-## 45. `src/scoring/risk_score.py`
-
-This file contains:
+Old UI:
 
 ```text
-get_risk_level()
-calculate_forecast_risk_score()
-calculate_final_operational_risk()
+User had to choose corridor manually.
 ```
+
+New UI:
+
+```text
+User enters latitude/longitude or clicks the map.
+Corridor becomes read-only.
+Backend infers corridor automatically.
+```
+
+The dashboard now shows:
+
+```text
+Latitude
+Longitude
+Inferred Corridor
+Match Method
+Match Distance
+Match Confidence
+Spatial Cluster
+Nearest Hotspot
+Spatial Density
+```
+
+This makes the system more realistic.
 
 ---
 
-## 46. Forecast Risk Score
+# 22. Outside Bengaluru Handling
 
-Forecast risk converts predicted count into a percentage.
+The recommended safety check is:
 
-Important inputs:
+```text
+Reject coordinates outside Bengaluru coverage area.
+```
+
+Reason:
+
+If user enters Delhi coordinates, the system should not force-match to a Bengaluru corridor.
+
+Current validation should return:
+
+```text
+outside_bengaluru = True
+corridor = OUTSIDE_BENGALURU
+confidence = INVALID
+```
+
+Dashboard should show an error:
+
+```text
+Selected location is outside Bengaluru coverage area.
+```
+
+This is important for judge-proofing.
+
+---
+
+# 23. Forecast Risk Score
+
+File:
+
+```text
+src/scoring/risk_score.py
+```
+
+Forecast risk converts predicted incident count into a percentage.
+
+Inputs:
 
 ```text
 predicted_incidents
@@ -1580,188 +812,170 @@ alert_probability
 context_multiplier
 ```
 
-The improved risk scaling avoids making forecast risk 100% too easily.
+Why use p95/p99?
 
-This is important because sparse data can make percentile thresholds small.
+```text
+Raw count alone is not meaningful.
+The score should be relative to historical traffic incident distribution.
+```
 
----
-
-## 47. Non-Corridor Handling
-
-`Non-corridor` is a broad fallback bucket.
-
-It aggregates many unrelated event locations.
-
-So it can have inflated historical risk.
-
-To avoid over-aggressive forecast risk, we apply a context multiplier.
-
-Example:
+For broad fallback categories like `Non-corridor`, a context multiplier dampens risk:
 
 ```text
 Non-corridor multiplier = 0.65
 ```
 
-This reduces risk inflation for broad fallback categories.
-
-Real corridors are better for demo and operational prediction.
-
 ---
 
-# Part J — Event Impact Scoring
+# 24. Event Impact Score
 
-## 48. `src/scoring/event_impact.py`
+File:
 
-This file calculates live event impact.
+```text
+src/scoring/event_impact.py
+```
 
-Inputs:
+This calculates live event impact using:
 
 ```text
 event_cause
-veh_type
+vehicle_type
 road_closure
 rush_hour
 ```
 
-The scoring is rule-based and explainable.
-
----
-
-## 49. Event Cause Weights
-
 Example cause weights:
 
 ```text
-vehicle_breakdown → 45
-accident          → 85
-construction      → 75
-water_logging     → 78
-tree_fall         → 72
-congestion        → 75
-public_event      → 82
-procession        → 88
-vip_movement      → 92
-protest           → 92
-others            → 40
+accident          → high
+congestion        → high
+vip_movement      → very high
+protest           → very high
+public_event      → high
+vehicle_breakdown → moderate
+others            → lower
+```
+
+Vehicle weights:
+
+```text
+heavy_vehicle
+truck
+bmtc_bus
+ksrtc_bus
+private_bus
+lcv
+private_car
+taxi
+auto
+```
+
+The event score is then adjusted using:
+
+```text
+priority
+event_type
+crowd_size
+weather
 ```
 
 ---
 
-## 50. Vehicle Weights
+# 25. Crowd Size Input
 
-Example vehicle weights:
+New input:
 
 ```text
-heavy_vehicle → 30
-truck         → 30
-bmtc_bus      → 30
-ksrtc_bus     → 28
-private_bus   → 28
-lcv           → 18
-private_car   → 10
-taxi          → 8
-auto          → 6
+Small  < 500
+Medium 500 - 5,000
+Large  5,000 - 50,000
+Mega   > 50,000
+```
+
+Crowd multipliers:
+
+```text
+small  → 1.00
+medium → 1.08
+large  → 1.18
+mega   → 1.30
+```
+
+Why?
+
+Public events, rallies, protests, festivals, and sports events depend heavily on crowd size.
+
+So:
+
+```text
+same public_event + mega crowd
+```
+
+should produce a higher impact than:
+
+```text
+same public_event + small crowd
 ```
 
 ---
 
-## 51. Event Impact Formula
+# 26. Weather Input
 
-Simplified:
-
-```text
-impact_score =
-    0.58 × cause_score
-  + 0.20 × vehicle_score
-  + 0.12 × closure_score
-  + rush_score
-  + public_transport_boost
-```
-
-Then clamped:
+New input:
 
 ```text
-0 to 100
+Clear
+Light Rain
+Heavy Rain
+Fog / Low Visibility
 ```
 
-Impact level:
+Weather multipliers:
 
 ```text
-0-25    LOW
-25-50   MODERATE
-50-75   HIGH
-75-100  CRITICAL
+clear       → 1.00
+light_rain  → 1.10
+heavy_rain  → 1.25
+fog         → 1.20
 ```
+
+Weather affects:
+
+```text
+event impact score
+duration estimate
+```
+
+This makes the demo feel more real-world.
 
 ---
 
-## 52. Why Event Impact Layer Is Needed
+# 27. Composite Event Impact Score — EIS
 
-The forecast model only knows historical incident patterns.
-
-But live events can be severe even in historically quiet corridors.
-
-Example:
+The system now computes one judge-friendly numeric score:
 
 ```text
-Forecast Risk: LOW
-Event: accident + heavy_vehicle + road closure
-```
-
-Final output should not remain LOW.
-
-The event impact layer solves this.
-
----
-
-# Part K — Final Operational Risk
-
-## 53. Final Risk Logic
-
-Final risk combines:
-
-```text
-forecast_risk_score
-event_impact_score
+EIS Score: 0–100
 ```
 
 Formula:
 
 ```text
-weighted_score =
-    0.45 × forecast_risk_score
-  + 0.55 × event_impact_score
+EIS =
+    0.35 × forecast_score
+  + 0.50 × event_score
+  + 0.15 × cause_risk_score
 ```
 
-Then event-floor logic:
+Where:
 
 ```text
-event_floor_score = 0.85 × event_impact_score
+forecast_score = historical forecast risk
+event_score = live event impact after crowd/weather
+cause_risk_score = historical risk of event cause
 ```
 
-Final score:
-
-```text
-max(weighted_score, event_floor_score)
-```
-
-Escalation rules:
-
-```text
-if event_impact_score >= 85:
-    final_score at least 75
-
-if event_impact_score >= 70:
-    final_score at least 55
-```
-
-This ensures high-impact live events are not suppressed by low historical forecast.
-
----
-
-## 54. Risk Levels
-
-Risk level mapping:
+EIS level:
 
 ```text
 0-25    LOW
@@ -1770,51 +984,201 @@ Risk level mapping:
 75-100  CRITICAL
 ```
 
----
+Why EIS matters:
 
-## 55. Example Final Risk Behavior
+The problem statement asks to quantify event impact.
 
-Example 1:
-
-```text
-Forecast Risk: LOW
-Event Impact: HIGH
-Final Risk: HIGH
-```
-
-Example 2:
+Earlier system gave levels only:
 
 ```text
-Forecast Risk: CRITICAL
-Event Impact: MODERATE
-Final Risk: HIGH
+LOW / MODERATE / HIGH / CRITICAL
 ```
 
-Example 3:
+Now it gives:
 
 ```text
-Forecast Risk: LOW
-Event Impact: LOW
-Final Risk: LOW
+EIS: 72.4%
 ```
 
-This gives balanced operational behavior.
+Judges can compare events numerically.
 
 ---
 
-# Part L — Resource Recommendation
+# 28. Final Operational Risk
 
-## 56. Officer and Barricade Recommendation
+Final risk combines:
 
-The system recommends deployment based on:
+```text
+forecast risk
+EIS score
+```
+
+The system uses event-floor escalation so serious live events are not suppressed by low historical forecast.
+
+Example:
+
+```text
+Forecast Risk: LOW
+Live Event: accident + heavy vehicle + closure
+EIS: HIGH
+Final Risk: HIGH
+```
+
+This is exactly the desired hybrid behavior.
+
+---
+
+# 29. Pre-event vs Post-event Comparison
+
+The dashboard now shows:
+
+```text
+Normal Baseline
+Expected After Event
+Expected Delta
+Percentage Increase
+Baseline Source
+```
+
+Baseline calculation:
+
+```text
+rolling_24
+then rolling_6
+then corridor_avg
+```
+
+This answers:
+
+```text
+How much worse will it get because of this event?
+```
+
+Example:
+
+```text
+Normal Baseline       : 0.12 incidents/hour
+Expected After Event  : 0.85 incidents/hour
+Expected Delta        : +0.73
+Percentage Increase   : 608%
+```
+
+---
+
+# 30. Confidence Interval / Prediction Range
+
+The dashboard now shows:
+
+```text
+Expected incidents: 0.85
+Range: 0.00 – 1.65
+```
+
+Current implementation:
+
+```text
+residual-based range using holdout RMSE
+```
+
+Important honesty:
+
+This is not a true CatBoost quantile interval unless we train quantile models. It is a demo-safe uncertainty range based on validation RMSE.
+
+Purpose:
+
+```text
+Show uncertainty
+Make prediction look production-grade
+Avoid pretending exact numbers are absolute
+```
+
+---
+
+# 31. Map Visualization
+
+The dashboard now shows a Leaflet map with:
+
+```text
+event marker
+primary impact circle
+secondary spillover circle
+risk-colored zones
+legend
+popup details
+optional event line from start to end coordinate
+```
+
+Map elements:
+
+```text
+Inner circle  = primary affected zone
+Outer circle  = secondary spillover zone
+Marker        = exact event location
+```
+
+This visually answers:
+
+```text
+What area will be affected?
+```
+
+This is one of the most important judge-facing features.
+
+---
+
+# 32. Affected Radius Logic
+
+The system estimates:
+
+```text
+affected_radius_m
+secondary_radius_m
+```
+
+Based on:
 
 ```text
 final_risk_level
 predicted_incidents
 road_closure
+event_cause
 ```
 
-Base allocation:
+Example:
+
+```text
+LOW      → small radius
+MODERATE → medium radius
+HIGH     → large radius
+CRITICAL → very large radius
+```
+
+Road closure and high-spread causes increase radius.
+
+High-spread causes:
+
+```text
+accident
+congestion
+vip_movement
+protest
+procession
+public_event
+water_logging
+```
+
+---
+
+# 33. Resource Recommendation
+
+The system recommends:
+
+```text
+officers
+barricades
+```
+
+Base rules:
 
 ```text
 LOW      → 2 officers, 0 barricades
@@ -1823,92 +1187,51 @@ HIGH     → 6 officers, 2 barricades
 CRITICAL → 8 officers, 4 barricades
 ```
 
-Extra rules:
+Extra resources for:
 
 ```text
-predicted_incidents >= 3 → add officer
-predicted_incidents >= 5 → add barricade
-predicted_incidents >= 8 → add more resources
-road_closure = true → add officer and barricades
-```
-
----
-
-## 57. Example Resource Output
-
-For:
-
-```text
-accident + heavy_vehicle + road closure
-```
-
-Possible output:
-
-```text
-Officers Needed   : 7
-Barricades Needed : 4
-```
-
-For:
-
-```text
-vehicle_breakdown + lcv + no closure
-```
-
-Possible output:
-
-```text
-Officers Needed   : 4
-Barricades Needed : 1
-```
-
----
-
-# Part M — Diversion Recommendation
-
-## 58. `src/routing/diversion_engine.py`
-
-This file recommends diversion corridors.
-
-It uses:
-
-```text
-NetworkX graph
-```
-
-Each corridor is a node.
-
-Edges represent possible corridor connections.
-
-Example graph edges:
-
-```text
-ORR East 1 → ORR East 2
-ORR East 1 → Old Airport Road
-ORR East 1 → Varthur Road
-
-Mysore Road → CBD 2
-Mysore Road → Magadi Road
-Mysore Road → Bannerghata Road
-```
-
----
-
-## 59. Diversion Output
-
-The engine returns:
-
-```text
-status
-message
-primary_detour
-secondary_detour
-support_corridors
+predicted_incidents >= 3
+predicted_incidents >= 5
+predicted_incidents >= 8
+road_closure = yes
 ```
 
 Example:
 
 ```text
+accident + heavy_vehicle + closure
+→ 7 officers, 4 barricades
+```
+
+---
+
+# 34. Diversion Engine
+
+File:
+
+```text
+src/routing/diversion_engine.py
+```
+
+It uses a NetworkX corridor graph.
+
+Each corridor is a node.
+
+Edges represent possible diversion connections.
+
+Output:
+
+```text
+primary_detour
+secondary_detour
+support_corridors
+diversion_action
+```
+
+Example:
+
+```text
+Affected Corridor : ORR East 1
 Primary Detour    : ORR East 2
 Secondary Detour  : Old Airport Road
 Support Corridors : Varthur Road, CBD 2, Mysore Road, CBD 1, Hosur Road
@@ -1916,496 +1239,425 @@ Support Corridors : Varthur Road, CBD 2, Mysore Road, CBD 1, Hosur Road
 
 ---
 
-## 60. Non-Corridor Diversion Rule
+# 35. Historical Similar Events
 
-`Non-corridor` should not be a primary diversion route unless the affected corridor itself is `Non-corridor`.
-
-This prevents bad outputs like:
+File:
 
 ```text
-Primary Detour: Non-corridor
+src/inference/similar_events.py
 ```
 
-The ranking function penalizes `Non-corridor`.
-
----
-
-# Part N — Training Orchestration
-
-## 61. `train_all.py`
-
-This is the main training script.
-
-It runs:
+The system now finds the top 3 similar historical events using:
 
 ```text
-load_data
-build_timeseries_dataset
-cross_validate_timeseries
-train_timeseries_model
-forecast_feature_importance
+same event cause
+same/inferred corridor
+similar hour
+geographic distance
 ```
 
-Command:
-
-```bash
-python train_all.py
-```
-
-Generated artifacts:
+It outputs:
 
 ```text
-models/timeseries_forecast_model.pkl
-models/timeseries_forecast.pkl
-forecast_feature_importance.png
+event_cause
+corridor
+time
+distance
+duration
+road closure
+similarity score
 ```
 
----
+This grounds predictions in real history.
 
-## 62. `prepare_feature_store.py`
-
-This builds the feature store.
-
-Command:
-
-```bash
-python prepare_feature_store.py
-```
-
-Generated artifact:
+Example:
 
 ```text
-models/traffic_feature_store.pkl
+Similar past event:
+vehicle_breakdown on ORR East 1
+distance: 340m
+duration: 72 minutes
+road closure: False
 ```
 
-This must be run after training and after dataset changes.
-
----
-
-## 63. `predict.py`
-
-This runs terminal inference.
-
-Command:
-
-```bash
-python predict.py
-```
-
-It calls:
+This is very powerful for judges because it shows:
 
 ```text
-src/inference/predict_traffic_risk.py
+not only black-box ML
+but also historical evidence
 ```
 
 ---
 
-# Part O — Model Artifacts
+# 36. Post-event Learning Stub
 
-## 64. Final ML Artifacts
-
-Final required artifacts:
+File:
 
 ```text
-models/timeseries_forecast_model.pkl
-models/timeseries_forecast.pkl
-models/traffic_feature_store.pkl
+dashboard/services/feedback_store.py
 ```
 
-Optional artifacts:
+The dashboard now has a feedback form where officers can enter:
 
 ```text
-forecast_feature_importance.png
-feature_importance.png
-shap_summary.png
-models/catboost_severity.pkl
+actual duration
+actual officers deployed
+actual barricades used
+actual road closure
+actual incident count
+officer notes
+```
+
+It stores feedback in:
+
+```text
+data/post_event_feedback.csv
+```
+
+This directly answers the problem statement pain point:
+
+```text
+No post-event learning system.
+```
+
+Current behavior:
+
+```text
+feedback is stored
+not yet used for retraining
+```
+
+Future upgrade:
+
+```text
+use feedback records for model recalibration / retraining
 ```
 
 ---
 
-## 65. Artifact Meaning
+# 37. Deployment Order Generator
 
-| Artifact                          | Meaning                                     |
-| --------------------------------- | ------------------------------------------- |
-| `timeseries_forecast_model.pkl`   | Main zero-inflated hurdle forecasting model |
-| `timeseries_forecast.pkl`         | Compatibility copy of forecast model        |
-| `traffic_feature_store.pkl`       | Historical feature profiles for inference   |
-| `forecast_feature_importance.png` | Forecast model explanation plot             |
-| `catboost_severity.pkl`           | Optional old severity classifier            |
+The system creates a formatted operational message:
+
+```text
+TRAFFIC DEPLOYMENT ORDER
+----------------------------------------
+Risk Level       : HIGH
+Risk Score       : 67.20%
+Event Cause      : accident
+Location         : 12.920000, 77.620000
+Inferred Corridor: ORR East 1
+Duration Estimate: 95 minutes
+
+RESOURCE PLAN
+----------------------------------------
+Officers Required: 7
+Barricades Needed: 4
+
+DIVERSION PLAN
+----------------------------------------
+Primary Detour   : ORR East 2
+Secondary Detour : Old Airport Road
+
+ACTION
+----------------------------------------
+Deploy officers, prepare barricades, and keep diversion support ready.
+```
+
+Dashboard includes:
+
+```text
+Generate / Copy Deployment Order
+```
+
+This makes the output operational rather than academic.
 
 ---
 
-# Part P — Health Check
+# 38. Dashboard Model Metrics Panel
 
-## 66. `health_check.py`
-
-A health-check file was added to validate the ML project.
-
-It checks:
+The dashboard now shows:
 
 ```text
-required files
-optional files
-package imports
-config path
-dataset loading
-datetime safety
-model artifacts
-feature store loading
-model loading
-model.predict compatibility
-sample prediction
-Django setup
-common bug patterns
-```
-
-Command:
-
-```bash
-python health_check.py
-```
-
-This helps detect:
-
-```text
-missing files
-missing models
-bad dataset path
-timezone bug
-hurdle model wrapper missing
-feature store mismatch
-import errors
-```
-
----
-
-# Part Q — Known Bugs and Validation
-
-## 67. Bug 1 — Mixed Timezone Datetimes
-
-Issue:
-
-```text
-tz-naive and tz-aware timestamps cannot be compared.
-```
-
-Affects active project:
-
-```text
-Yes, if start_datetime contains mixed timezone formats.
-```
-
-Correct fix location:
-
-```text
-src/forecasting/build_timeseries_dataset.py
-```
-
-Fix:
-
-```python
-pd.to_datetime(series, errors="coerce", utc=True).dt.tz_convert(None)
-```
-
----
-
-## 68. Bug 2 — Hurdle Model Bundle Does Not Support `.predict()`
-
-Issue:
-
-```text
-train_timeseries_model() returns a dict-like model bundle.
-Some tests expect model.predict(X).
-```
-
-Affects active project:
-
-```text
-Yes.
-```
-
-Correct fix:
-
-```text
-HurdleModelBundle class in forecast_predictor.py
-```
-
-The bundle now supports:
-
-```python
-model.predict(X)
-model.predict_details(X)
-model.predict_proba(X)
-```
-
----
-
-## 69. Bug 3 — Missing Spatial Features in Old Classifier Pipeline
-
-Issue:
-
-```text
-old advanced_features.py may not create all features used by train_catboost.py
-```
-
-Affects active project:
-
-```text
-No.
-```
-
-Reason:
-
-```text
-train_catboost.py is optional and not used in the current final flow.
-```
-
-So it does not block final ML system.
-
----
-
-# Part R — Example Outputs
-
-## 70. High Scenario
-
-Input:
-
-```text
-Corridor: ORR East 1
-Hour: 9
-Weekday: 4
-Month: 4
-Event Cause: accident
-Vehicle Type: heavy_vehicle
-Road Closure Required: yes
-```
-
-Output observed:
-
-```text
-Forecast Risk Level   : LOW
-Event Impact Level    : HIGH
-Final Risk Level      : HIGH
-
-Officers Needed       : 7
-Barricades Needed     : 4
-
-Primary Detour        : ORR East 2
-Secondary Detour      : Old Airport Road
-```
-
-Interpretation:
-
-```text
-Historical forecast is low,
-but live event is severe,
-so final risk becomes HIGH.
-```
-
-This is correct hybrid behavior.
-
----
-
-## 71. Non-Corridor Scenario
-
-Input:
-
-```text
-Corridor: Non-corridor
-Hour: 3
-Event Cause: vehicle_breakdown
-Vehicle Type: lcv
-Road Closure Required: no
-```
-
-Observed:
-
-```text
-Forecast Risk Level : CRITICAL
-Event Impact Level  : MODERATE
-Final Risk Level    : HIGH
-```
-
-Reason:
-
-```text
-Non-corridor is a broad fallback bucket.
-It aggregates many unrelated locations.
-Its historical risk can be inflated.
-```
-
-Recommendation:
-
-```text
-Use actual corridors for clean demo:
-ORR East 1
-CBD 1
-Mysore Road
-Old Airport Road
-Hosur Road
-```
-
----
-
-# Part S — Strengths of the ML System
-
-## 72. Strengths
-
-The ML system includes:
-
-```text
-proper time-series split
-full corridor-hour grid
-zero rows included
-corridor-specific lag features
-rolling features without leakage
-zero-inflated hurdle model
-F2-based threshold tuning
-strong recall
-good ROC-AUC
-good PR-AUC
-feature store for inference
-event-aware final risk scoring
-resource recommendation
-diversion recommendation
-health-check validation
-```
-
-The system is not just a prediction script.
-
-It is an end-to-end ML decision engine.
-
----
-
-# Part T — Limitations
-
-## 73. Current Limitations
-
-The model uses incident-history data only.
-
-It does not yet use:
-
-```text
-live traffic speed
-vehicle flow
-road capacity
-weather
-rainfall
-holiday calendar
-event crowd size
-CCTV feed
-GPS probe data
-real-time signal status
-lane-level road graph
-```
-
-Because of that:
-
-```text
-exact spike prediction is limited
-R² remains modest
-historical forecast can be low even for severe live events
-```
-
-The event impact layer compensates for some of this.
-
----
-
-# Part U — Future ML Improvements
-
-## 74. Recommended Future Enhancements
-
-Possible upgrades:
-
-```text
-weather features
-holiday/event calendar features
-road-capacity features
-real-time speed and volume data
-GPS-based congestion signal
-OpenStreetMap road graph
-lane-level diversion modeling
-calibrated probability models
-top-k alert precision metric
-post-event feedback learning
-online retraining
-MLflow model registry
-model drift monitoring
-```
-
-A very important future model:
-
-```text
-High-risk alert classifier
-```
-
-Target:
-
-```text
-Will this corridor-hour become operationally risky?
-```
-
-Metrics:
-
-```text
-recall
-precision
-F2
+MAE
+R² Score
+Alert Accuracy
+Alert Recall
+Alert F1
+ROC-AUC
 PR-AUC
-top-k precision
 ```
 
-This may be more useful than exact incident count.
+This answers:
+
+```text
+How accurate is the model?
+```
+
+Judges can see both regression and alert classification metrics.
 
 ---
 
-# Part V — Final Judge Explanation
+# 39. Dashboard Panels
 
-## 75. Technical Judge Summary
-
-The ML system converts raw traffic event logs into corridor-hour time-series data. It includes zero-incident hours so the model learns both normal and abnormal conditions.
-
-Because 93% of the target values are zero, we use a zero-inflated hurdle model instead of plain regression. The first stage predicts whether any incident is likely, and the second stage estimates count only for positive incident conditions.
-
-The alert threshold is tuned with F2 score because recall is more important in traffic operations. Missing a real accident is more costly than raising an early warning.
-
-The predicted incident count is converted into forecast risk, then combined with a live event impact score based on event cause, vehicle type, road closure, rush hour, and priority. This produces a final operational risk level.
-
-Finally, the system converts risk into officer deployment, barricade requirement, affected area estimate, and diversion route recommendation.
-
----
-
-# 76. One-Line ML Architecture
+Updated dashboard result panels:
 
 ```text
-Raw traffic events → corridor-hour time-series → hurdle forecast model → feature store → live event impact scoring → final operational risk → resource and diversion recommendation
+1. Model Performance
+2. Location Intelligence
+3. Forecast Layer
+4. Event Impact Layer
+5. Composite EIS
+6. Pre-event vs Post-event
+7. Prediction Uncertainty
+8. Resource Allocation
+9. Diversion Plan
+10. Impact Map
+11. Historical Similar Events
+12. Deployment Order
+13. Post-event Feedback Loop
 ```
 
 ---
 
-# 77. Final ML System Status
+# 40. Updated End-to-End Prediction Flow
 
-Current model status:
-
-```text
-Sparse-data-aware forecasting: complete
-Feature store: complete
-Terminal inference: complete
-Risk scoring: complete
-Event impact scoring: complete
-Resource recommendation: complete
-Diversion recommendation: complete
-Health check: complete
-```
-
-Latest useful model quality:
+When user submits an event:
 
 ```text
-MAE      : around 0.15
-R²       : around 0.23
-Recall   : around 0.71
-ROC-AUC  : around 0.85
-PR-AUC   : around 0.42
+1. User clicks map or enters lat/lon
+2. Dashboard sends payload to ml_engine.py
+3. ml_engine loads forecast model and feature store
+4. Coordinate resolver validates location
+5. System infers corridor
+6. System finds nearest spatial cluster
+7. System gets historical profile:
+       corridor-hour or cluster-hour fallback
+8. Model predicts incident count
+9. Model returns alert probability
+10. Forecast risk score is calculated
+11. Event impact score is calculated
+12. Crowd/weather modifiers adjust event score
+13. EIS is calculated
+14. Final operational risk is calculated
+15. Officers and barricades are recommended
+16. Diversion routes are selected
+17. Affected radius is computed
+18. Confidence range is generated
+19. Similar historical events are fetched
+20. Deployment order is generated
+21. Dashboard displays everything visually
 ```
 
-This is suitable for a prototype traffic command-center decision-support system.
+---
+
+# 41. Updated Backend Return Structure
+
+`predict_event_impact()` returns:
+
+```python
+{
+    "input": {...},
+    "forecast": {...},
+    "event": {...},
+    "eis": {...},
+    "baseline": {...},
+    "final": {...},
+    "confidence": {...},
+    "history": {...},
+    "resources": {...},
+    "diversion": {...},
+    "metrics": {...},
+    "map": {...},
+    "similar_events": [...],
+    "deployment_order": "...",
+    "action": "..."
+}
+```
+
+This makes the dashboard very easy to render.
+
+---
+
+# 42. What Is ML and What Is Rule-Based?
+
+## Machine Learning
+
+```text
+Zero-inflated hurdle model
+CatBoostClassifier
+CatBoostRegressor
+Time-series cross-validation
+Feature importance
+KMeans spatial clustering
+Historical similar event retrieval
+```
+
+## Statistical / Feature Store
+
+```text
+corridor-hour profiles
+cluster-hour profiles
+lag features
+rolling features
+corridor average
+corridor volatility
+risk percentiles
+hotspot counts
+spatial density
+```
+
+## Rule-Based Decision Intelligence
+
+```text
+event cause weights
+vehicle weights
+road closure boost
+crowd multiplier
+weather multiplier
+EIS formula
+risk levels
+resource rules
+radius estimation
+diversion graph
+deployment order format
+feedback storage
+```
+
+This hybrid architecture is intentional because traffic operations need explainable decisions, not only model predictions.
+
+---
+
+# 43. Strengths of the Updated System
+
+```text
+Coordinate-first user input
+No need for user to know corridor names
+Nearest corridor inference
+KMeans cluster fallback
+Unknown locations no longer become all-zero features
+Sparse-data-aware hurdle model
+F2 threshold tuning
+Dashboard model metrics
+EIS 0–100 score
+Crowd and weather impact
+Pre/post event comparison
+Impact circles on map
+Historical similar events
+Confidence interval
+Deployment order
+Post-event feedback loop
+```
+
+This is much stronger than the earlier system.
+
+---
+
+# 44. Limitations
+
+Current limitations:
+
+```text
+Real-time traffic API not integrated yet
+Alerts are not actually sent by SMS/email/push
+Confidence interval is RMSE-based, not quantile-trained
+Post-event feedback is stored but not used for retraining yet
+Similar events lookup is heuristic, not vector embedding based
+Diversion engine is corridor-level, not live road-network routing
+Weather is manually selected, not live weather API
+Crowd size is manually entered, not estimated automatically
+```
+
+---
+
+# 45. Future Improvements
+
+Recommended next upgrades:
+
+```text
+real-time traffic speed feed
+weather API integration
+automatic high-risk alerts
+outside Bengaluru hard validation
+true CatBoost quantile interval models
+MLflow model registry
+feedback-based retraining
+OpenStreetMap routing graph
+traffic signal status integration
+CCTV/GPS integration
+top-k alert precision evaluation
+```
+
+---
+
+# 46. Judge-Level Explanation
+
+Use this explanation:
+
+```text
+Our system is an event-driven traffic intelligence engine. It starts with exact coordinates from the map instead of forcing the user to select a corridor. The backend resolves the nearest corridor, nearest hotspot, and spatial cluster. If the location is not matched to a known corridor, the system uses KMeans spatial cluster fallback so lag and rolling features remain meaningful.
+
+The forecasting model is a zero-inflated hurdle model because over 93% of corridor-hour rows have zero incidents. First, a CatBoost classifier predicts whether an incident is likely. Then a CatBoost regressor estimates the positive incident count. We tune the alert threshold using F2 score because traffic operations care more about recall than precision.
+
+The forecast risk is combined with live event impact, crowd size, weather, and historical cause risk to create a 0–100 Event Impact Score. The dashboard then shows final risk, officers required, barricades required, affected map radius, diversion routes, confidence range, similar historical events, and a deployment order. After the event, officers can submit feedback, creating a post-event learning loop.
+```
+
+---
+
+# 47. One-Line Updated Architecture
+
+```text
+Map coordinates → nearest corridor + spatial cluster → feature store fallback → hurdle forecast model → EIS scoring → final risk → map impact zones → deployment + diversion + feedback loop
+```
+
+---
+
+# 48. Current System Status
+
+```text
+Coordinate-first input                 ✅
+KMeans spatial fallback                ✅
+Model metrics dashboard support         ✅
+EIS score                               ✅
+Pre/post comparison                     ✅
+Crowd size input                        ✅
+Weather input                           ✅
+Impact map circles                      ✅
+Post-event learning stub                ✅
+Confidence interval                     ✅
+Similar historical events               ✅
+Deployment order                        ✅
+Shift schedule                          skipped
+Real-time traffic                       not yet
+Automatic alerts                        not yet
+Outside Bengaluru validation            recommended / add if not done
+```
+
+---
+
+# 49. Final Summary
+
+The updated system is no longer a simple traffic prediction model.
+
+It is now a full operational intelligence pipeline:
+
+```text
+Precise location input
+Spatial intelligence
+Historical ML forecast
+Live event impact scoring
+Map-based impact visualization
+Operational deployment planning
+Historical grounding
+Post-event learning
+```
+
+This is the version you should present to judges because it directly answers the original pain points:
+
+```text
+Event impact is not quantified in advance → EIS 0–100
+Deployment is experience-driven → officer + barricade recommendation
+No post-event learning → feedback storage loop
+No affected area view → concentric map impact zones
+Corridor dependency → coordinate-first inference with KMeans fallback
+```
