@@ -427,6 +427,124 @@
         </div>
 
         {% if result %}
+            <section class="hero-result-section fade-in">
+
+                <div class="hero-left-panel">
+
+                    <div class="hero-kicker">
+                        Live Operational Decision
+                    </div>
+
+                    <h1 class="hero-risk-title">
+                        {{ result.final.final_level }} RISK
+                    </h1>
+
+                    <div class="hero-risk-score">
+                        {{ result.final.final_score|floatformat:1 }}%
+                    </div>
+
+                    <div class="hero-risk-subtitle">
+                        Final operational risk based on forecast, live event impact, crowd/weather modifiers, and historical cause risk.
+                    </div>
+
+                    <div class="hero-eis-card">
+                        <div>
+                            <span>Composite EIS</span>
+                            <strong>{{ result.eis.score|floatformat:1 }}%</strong>
+                        </div>
+
+                        <div>
+                            <span>EIS Level</span>
+                            <strong class="badge severity-{{ result.eis.level|lower }}">
+                                {{ result.eis.level }}
+                            </strong>
+                        </div>
+                    </div>
+
+                    <div class="hero-action-grid">
+
+                        <div class="hero-action-card">
+                            <span>Officers</span>
+                            <strong>{{ result.resources.officers }}</strong>
+                        </div>
+
+                        <div class="hero-action-card">
+                            <span>Barricades</span>
+                            <strong>{{ result.resources.barricades }}</strong>
+                        </div>
+
+                        <div class="hero-action-card">
+                            <span>Primary Radius</span>
+                            <strong>{{ result.map.affected_radius_m }}m</strong>
+                        </div>
+
+                        <div class="hero-action-card">
+                            <span>Spillover Radius</span>
+                            <strong>{{ result.map.secondary_radius_m }}m</strong>
+                        </div>
+
+                    </div>
+
+                    <div class="hero-action-message">
+                        {{ result.action }}
+                    </div>
+
+                    <button
+                        type="button"
+                        class="hero-copy-btn"
+                        onclick="copyDeploymentOrder()"
+                    >
+                        Copy Deployment Order
+                    </button>
+
+                </div>
+
+                <div class="hero-map-panel">
+
+                    <div class="hero-map-topbar">
+                        <div>
+                            <span class="dot-live"></span>
+                            Impact Map
+                        </div>
+
+                        <div>
+                            {{ result.input.corridor }}
+                        </div>
+                    </div>
+
+                    <div id="heroMap"></div>
+
+                    <div class="hero-map-overlay">
+                        <div>
+                            <span>Location</span>
+                            <strong>
+                                {{ result.input.latitude }},
+                                {{ result.input.longitude }}
+                            </strong>
+                        </div>
+
+                        <div>
+                            <span>Match</span>
+                            <strong>
+                                {{ result.input.location_match.confidence }}
+                            </strong>
+                        </div>
+                    </div>
+
+                </div>
+
+            </section>
+
+            <textarea
+                id="deploymentOrder"
+                class="hidden-deployment-order"
+                readonly
+            >{{ result.deployment_order }}</textarea>
+
+            <div class="section-divider">
+                <span>Detailed Technical Analysis</span>
+            </div>
+
             <div class="results-container">
 
                 <div class="cards">
@@ -503,6 +621,10 @@
                                 </div>
                             </div>
                         </div>
+
+                        <p class="muted terminal-text">
+                            &gt; Forecast risk is based only on historical model prediction. Live event severity is added separately through EIS and final operational risk.
+                        </p>
                     </div>
 
                     <div class="card fade-in">
@@ -629,17 +751,33 @@
 
                             <div class="comparison-row">
                                 <span>Incident volume</span>
-                                <strong>{{ result.baseline.normal_baseline|floatformat:2 }}</strong>
-                                <strong>{{ result.baseline.predicted_after_event|floatformat:2 }}</strong>
-                                <strong>+{{ result.baseline.expected_delta|floatformat:2 }}</strong>
+
+                                <strong>
+                                    {{ result.baseline.normal_baseline|floatformat:2 }}
+                                </strong>
+
+                                <strong>
+                                    {{ result.baseline.predicted_after_event|floatformat:2 }}
+                                </strong>
+
+                                <strong>
+                                    +{{ result.baseline.expected_delta|floatformat:2 }}
+                                </strong>
                             </div>
 
                             <div class="comparison-row">
                                 <span>Risk score</span>
-                                <strong>{{ result.forecast.forecast_score|floatformat:1 }}%</strong>
-                                <strong>{{ result.final.final_score|floatformat:1 }}%</strong>
+
                                 <strong>
-                                    +{{ result.baseline.percentage_increase|floatformat:1 }}%
+                                    {{ result.baseline.normal_risk_score|floatformat:1 }}%
+                                </strong>
+
+                                <strong>
+                                    {{ result.baseline.with_event_risk_score|floatformat:1 }}%
+                                </strong>
+
+                                <strong>
+                                    +{{ result.baseline.risk_delta_points|floatformat:1 }} pp
                                 </strong>
                             </div>
 
@@ -849,10 +987,10 @@
 
                     <div class="card fade-in">
                         <div class="card-kicker">
-                            Prediction Uncertainty
+                            Model Uncertainty
                         </div>
 
-                        <h2>Expected Incident Range</h2>
+                        <h2>Estimated uncertainty (±1 RMSE)</h2>
 
                         <div class="kv">
                             <span>Expected Incidents</span>
@@ -862,21 +1000,25 @@
                         </div>
 
                         <div class="kv">
-                            <span>Lower Range</span>
+                            <span>Lower Estimate</span>
                             <strong class="mono">
                                 {{ result.confidence.lower|floatformat:2 }}
                             </strong>
                         </div>
 
                         <div class="kv">
-                            <span>Upper Range</span>
+                            <span>Upper Estimate</span>
                             <strong class="mono">
                                 {{ result.confidence.upper|floatformat:2 }}
                             </strong>
                         </div>
 
+                        <div class="terminal-header">
+                            Interpretation
+                        </div>
+
                         <p class="muted terminal-text">
-                            &gt; Method: {{ result.confidence.method }}
+                            &gt; {{ result.confidence.method }}. This range is based on historical validation error and should be treated as an uncertainty estimate, not a guaranteed prediction interval.
                         </p>
                     </div>
 
@@ -1473,15 +1615,15 @@
         map.invalidateSize();
     }, 300);
 
+</script>
+
+<script>
     function copyDeploymentOrder() {
         const box = document.getElementById("deploymentOrder");
 
         if (!box) {
             return;
         }
-
-        box.select();
-        box.setSelectionRange(0, 99999);
 
         navigator.clipboard.writeText(
             box.value
@@ -1490,6 +1632,132 @@
         });
     }
 </script>
+
+{% if result %}
+<script>
+    const heroLat = parseFloat("{{ result.map.latitude|default:'12.9716' }}");
+    const heroLon = parseFloat("{{ result.map.longitude|default:'77.5946' }}");
+
+    const heroRiskLevel = "{{ result.final.final_level }}";
+
+    function heroRiskColor(level) {
+        const normalized = String(level).toUpperCase();
+
+        if (normalized === "LOW") {
+            return "#22c55e";
+        }
+
+        if (normalized === "MODERATE") {
+            return "#f59e0b";
+        }
+
+        if (normalized === "HIGH") {
+            return "#f97316";
+        }
+
+        return "#ef4444";
+    }
+
+    const heroColor = heroRiskColor(heroRiskLevel);
+
+    const heroMap = L.map("heroMap", {
+        zoomControl: true,
+        scrollWheelZoom: false
+    }).setView(
+        [
+            heroLat,
+            heroLon
+        ],
+        14
+    );
+
+    L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+            maxZoom: 19,
+            attribution: "&copy; OpenStreetMap contributors"
+        }
+    ).addTo(heroMap);
+
+    const heroIcon = L.divIcon({
+        className: "event-marker",
+        html: `
+            <div class="pulse-marker">
+                <div class="pulse-core"></div>
+            </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+    });
+
+    L.marker(
+        [
+            heroLat,
+            heroLon
+        ],
+        {
+            icon: heroIcon
+        }
+    ).addTo(heroMap).bindPopup(
+        `
+        <div class="map-popup">
+            <strong>Event Location</strong><br>
+            Risk: {{ result.final.final_level }}<br>
+            EIS: {{ result.eis.score|floatformat:1 }}%<br>
+            Corridor: {{ result.input.corridor }}
+        </div>
+        `
+    );
+
+    const heroPrimaryRadius = parseFloat(
+        "{{ result.map.affected_radius_m|default:'500' }}"
+    );
+
+    const heroSecondaryRadius = parseFloat(
+        "{{ result.map.secondary_radius_m|default:'900' }}"
+    );
+
+    const heroSecondaryCircle = L.circle(
+        [
+            heroLat,
+            heroLon
+        ],
+        {
+            radius: heroSecondaryRadius,
+            color: heroColor,
+            fillColor: heroColor,
+            fillOpacity: 0.08,
+            weight: 2,
+            dashArray: "8, 8"
+        }
+    ).addTo(heroMap);
+
+    L.circle(
+        [
+            heroLat,
+            heroLon
+        ],
+        {
+            radius: heroPrimaryRadius,
+            color: heroColor,
+            fillColor: heroColor,
+            fillOpacity: 0.22,
+            weight: 3
+        }
+    ).addTo(heroMap);
+
+    heroMap.fitBounds(
+        heroSecondaryCircle.getBounds(),
+        {
+            padding: [30, 30]
+        }
+    );
+
+    setTimeout(function () {
+        heroMap.invalidateSize();
+    }, 300);
+</script>
+{% endif %}
 
 </body>
 </html>

@@ -8,22 +8,21 @@ import pandas as pd
 
 from django.conf import settings
 
-from src.forecasting.forecast_predictor import (
-    predict_single_forecast
-)
-
-from src.inference.similar_events import find_similar_events
+from src.forecasting.forecast_predictor import predict_single_forecast
 
 from src.inference.location_resolver import (
     resolve_corridor_from_coordinates,
-    get_profile_with_spatial_fallback
+    get_profile_with_spatial_fallback,
+    is_bad_corridor_name,
 )
+
+from src.inference.similar_events import find_similar_events
 
 from src.scoring.event_impact import calculate_event_impact
 
 from src.scoring.risk_score import (
     calculate_forecast_risk_score,
-    calculate_final_operational_risk
+    calculate_final_operational_risk,
 )
 
 from src.routing.diversion_engine import recommend_diversions
@@ -81,9 +80,7 @@ _MODEL_CACHE = None
 _STORE_CACHE = None
 
 
-def parse_bool(
-    value
-):
+def parse_bool(value):
     value = str(value).strip().lower()
 
     return value in [
@@ -91,14 +88,11 @@ def parse_bool(
         "true",
         "1",
         "y",
-        "on"
+        "on",
     ]
 
 
-def safe_float(
-    value,
-    fallback=0.0
-):
+def safe_float(value, fallback=0.0):
     try:
         if value is None:
             return fallback
@@ -112,6 +106,13 @@ def safe_float(
 
     except Exception:
         return fallback
+
+
+def clamp(value, low=0.0, high=100.0):
+    return max(
+        low,
+        min(float(value), high)
+    )
 
 
 def load_model():
@@ -141,46 +142,32 @@ def load_feature_store():
             "Feature store not found. Run python prepare_feature_store.py first."
         )
 
-    _STORE_CACHE = joblib.load(
-        FEATURE_STORE_PATH
-    )
+    _STORE_CACHE = joblib.load(FEATURE_STORE_PATH)
 
     return _STORE_CACHE
 
 
-def resolve_corridor_name(
-    corridor,
-    store
-):
-    user_clean = (
-        str(corridor)
-        .strip()
-        .lower()
-    )
+def resolve_corridor_name(corridor, store):
+    corridor = str(corridor).strip()
+
+    if is_bad_corridor_name(corridor):
+        return "Non-corridor"
+
+    user_clean = corridor.lower()
 
     for c in store.get("corridors", []):
-        if (
-            str(c)
-            .strip()
-            .lower()
-            ==
-            user_clean
-        ):
+        if str(c).strip().lower() == user_clean:
             return c
 
-    return str(corridor).strip()
+    return corridor
 
 
-def normalize_timestamp(
-    timestamp_string
-):
+def normalize_timestamp(timestamp_string):
     if not timestamp_string:
         return datetime.now()
 
     try:
-        return datetime.fromisoformat(
-            timestamp_string
-        )
+        return datetime.fromisoformat(timestamp_string)
 
     except Exception:
         return datetime.now()
@@ -223,8 +210,8 @@ def build_input_row(
             row[feature] = hour_cos
 
         else:
-            row[feature] = profile.get(
-                feature,
+            row[feature] = safe_float(
+                profile.get(feature),
                 0.0
             )
 
@@ -234,9 +221,9 @@ def build_input_row(
     )
 
 
-def get_risk_level_from_score(
-    score
-):
+def get_risk_level_from_score(score):
+    score = float(score)
+
     if score < 25:
         return "LOW"
 
@@ -256,14 +243,12 @@ def get_crowd_multiplier(crowd_size):
         .lower()
     )
 
-    crowd_multipliers = {
+    return {
         "small": 1.00,
         "medium": 1.08,
         "large": 1.18,
         "mega": 1.30,
-    }
-
-    return crowd_multipliers.get(
+    }.get(
         crowd_size,
         1.00
     )
@@ -276,22 +261,76 @@ def get_weather_multiplier(weather):
         .lower()
     )
 
-    weather_multipliers = {
+    return {
         "clear": 1.00,
         "light_rain": 1.10,
         "heavy_rain": 1.25,
         "fog": 1.20,
-    }
-
-    return weather_multipliers.get(
+    }.get(
         weather,
         1.00
     )
 
 
+def get_priority_boost(priority):
+    return {
+        "low": 0,
+        "medium": 4,
+        "high": 8,
+        "critical": 12,
+    }.get(
+        str(priority).strip().lower(),
+        4
+    )
+
+
+def get_event_type_boost(event_type):
+    return {
+        "planned": 2,
+        "unplanned": 6,
+    }.get(
+        str(event_type).strip().lower(),
+        4
+    )
+
+
+def calculate_adjusted_event_score(
+    base_event_score,
+    priority,
+    event_type,
+    crowd_size,
+    weather
+):
+    priority_boost = get_priority_boost(priority)
+    event_type_boost = get_event_type_boost(event_type)
+
+    score = (
+        safe_float(base_event_score)
+        +
+        priority_boost
+        +
+        event_type_boost
+    )
+
+    crowd_multiplier = get_crowd_multiplier(crowd_size)
+    weather_multiplier = get_weather_multiplier(weather)
+
+    score = (
+        score
+        *
+        crowd_multiplier
+        *
+        weather_multiplier
+    )
+
+    score = clamp(score, 0, 100)
+
+    return score, crowd_multiplier, weather_multiplier
+
+
 def calculate_eis_score(
     forecast_score,
-    event_score,
+    adjusted_event_score,
     profile,
     store
 ):
@@ -306,25 +345,105 @@ def calculate_eis_score(
         max(max_cause_risk, 1.0)
     ) * 100
 
-    cause_risk_score = max(
+    cause_risk_score = clamp(
+        cause_risk_score,
         0,
-        min(cause_risk_score, 100)
+        100
     )
 
+    # More operationally stable:
+    # event impact is dominant,
+    # forecast adds historical signal,
+    # cause risk adds historical context.
     eis_score = (
-        0.35 * forecast_score
+        0.30 * safe_float(forecast_score)
         +
-        0.50 * event_score
+        0.55 * safe_float(adjusted_event_score)
         +
         0.15 * cause_risk_score
     )
 
-    eis_score = max(
+    eis_score = clamp(
+        eis_score,
         0,
-        min(eis_score, 100)
+        100
     )
 
     return eis_score, cause_risk_score
+
+
+def calculate_operational_after_event_index(
+    normal_baseline,
+    predicted_incidents,
+    eis_score,
+    road_closure,
+    crowd_size,
+    weather,
+    store
+):
+    """
+    Separate display index from pure ML count.
+
+    The ML predicted_incidents stays honest.
+    This value estimates operational pressure after the event.
+    """
+
+    normal_baseline = max(
+        safe_float(normal_baseline),
+        0.0
+    )
+
+    predicted_incidents = max(
+        safe_float(predicted_incidents),
+        0.0
+    )
+
+    incident_p95 = max(
+        safe_float(store.get("incident_p95"), 1.0),
+        1.0
+    )
+
+    event_pressure = (
+        safe_float(eis_score)
+        /
+        100.0
+    ) * incident_p95
+
+    if road_closure:
+        event_pressure += 0.35 * incident_p95
+
+    if str(crowd_size).lower() in ["large", "mega"]:
+        event_pressure += 0.20 * incident_p95
+
+    if str(weather).lower() in ["heavy_rain", "fog"]:
+        event_pressure += 0.15 * incident_p95
+
+    after_event_index = max(
+        predicted_incidents,
+        normal_baseline + event_pressure
+    )
+
+    expected_delta = max(
+        after_event_index - normal_baseline,
+        0.0
+    )
+
+    if normal_baseline > 0:
+        percentage_increase = (
+            expected_delta
+            /
+            normal_baseline
+        ) * 100
+    else:
+        percentage_increase = 100 if after_event_index > 0 else 0
+
+    percentage_increase = clamp(
+        percentage_increase,
+        0,
+        999
+    )
+
+    return after_event_index, expected_delta, percentage_increase
 
 
 def recommend_resources(
@@ -365,10 +484,7 @@ def recommend_resources(
     return officers, barricades
 
 
-def get_action_message(
-    final_risk_level,
-    road_closure
-):
+def get_action_message(final_risk_level, road_closure):
     if final_risk_level == "LOW":
         return "Normal monitoring is sufficient."
 
@@ -393,7 +509,7 @@ def estimate_duration_minutes(
     road_closure,
     weather="clear"
 ):
-    base = 30 + predicted_incidents * 20
+    base = 30 + safe_float(predicted_incidents) * 20
 
     if final_risk_level == "HIGH":
         base += 20
@@ -404,16 +520,9 @@ def estimate_duration_minutes(
     if road_closure:
         base += 30
 
-    weather = str(weather or "clear").lower()
+    weather_multiplier = get_weather_multiplier(weather)
 
-    if weather == "light_rain":
-        base *= 1.10
-
-    elif weather == "heavy_rain":
-        base *= 1.25
-
-    elif weather == "fog":
-        base *= 1.20
+    base *= weather_multiplier
 
     return int(
         max(
@@ -465,7 +574,7 @@ def estimate_affected_radius_meters(
         "protest",
         "procession",
         "public_event",
-        "water_logging"
+        "water_logging",
     ]
 
     if event_cause in high_spread_causes:
@@ -479,56 +588,11 @@ def estimate_affected_radius_meters(
     )
 
 
-def build_shift_plan(
-    timestamp,
-    duration_minutes,
-    officers
-):
-    start_hour = timestamp.hour
-
-    pre_event = max(
-        1,
-        officers // 3
-    )
-
-    peak = officers
-
-    dispersal = max(
-        1,
-        officers // 2
-    )
-
-    return [
-        {
-            "phase": "Pre-event control",
-            "time": f"{start_hour:02d}:00 - {(start_hour + 1) % 24:02d}:00",
-            "officers": pre_event,
-        },
-        {
-            "phase": "Peak impact control",
-            "time": f"{(start_hour + 1) % 24:02d}:00 - {(start_hour + 3) % 24:02d}:00",
-            "officers": peak,
-        },
-        {
-            "phase": "Dispersal monitoring",
-            "time": f"{(start_hour + 3) % 24:02d}:00 - {(start_hour + 4) % 24:02d}:00",
-            "officers": dispersal,
-        },
-    ]
-
-
 def build_prediction_interval(
     predicted_incidents,
     model_metrics,
     alert_probability=None
 ):
-    """
-    Demo-safe uncertainty band using holdout RMSE.
-
-    This is not a true quantile CatBoost interval.
-    It is a residual-based confidence range from validation error.
-    """
-
     rmse = safe_float(
         model_metrics.get("rmse"),
         0.50
@@ -537,33 +601,33 @@ def build_prediction_interval(
     if rmse <= 0:
         rmse = 0.50
 
-    uncertainty_width = 1.64 * rmse
+    uncertainty_width = rmse
 
     if alert_probability is not None:
-        # Wider interval around uncertain alert probability.
         probability_uncertainty = 1 - abs(
             float(alert_probability) - 0.5
         ) * 2
 
         uncertainty_width *= (
-            1 + 0.35 * probability_uncertainty
+            1 + 0.25 * probability_uncertainty
         )
 
     lower = max(
         0.0,
-        predicted_incidents - uncertainty_width
+        safe_float(predicted_incidents) - uncertainty_width
     )
 
     upper = max(
-        predicted_incidents,
-        predicted_incidents + uncertainty_width
+        safe_float(predicted_incidents),
+        safe_float(predicted_incidents) + uncertainty_width
     )
 
     return {
         "expected": float(predicted_incidents),
         "lower": float(lower),
         "upper": float(upper),
-        "method": "Holdout RMSE residual range",
+        "method": "Estimated uncertainty using holdout RMSE",
+        "label": "Estimated uncertainty (±1 RMSE)",
     }
 
 
@@ -615,9 +679,7 @@ def build_deployment_order(
     )
 
 
-def predict_event_impact(
-    payload
-):
+def predict_event_impact(payload):
     model = load_model()
     store = load_feature_store()
 
@@ -639,22 +701,6 @@ def predict_event_impact(
         77.5946
     )
 
-    location_match = resolve_corridor_from_coordinates(
-        latitude=latitude,
-        longitude=longitude,
-        store=store
-    )
-
-    if location_match.get("outside_bengaluru"):
-        raise ValueError(
-            "Selected location is outside Bengaluru coverage area. Please choose a location inside Bengaluru."
-        )
-
-    corridor = resolve_corridor_name(
-        location_match["corridor"],
-        store
-    )
-
     end_latitude = safe_float(
         payload.get("end_latitude"),
         None
@@ -663,6 +709,23 @@ def predict_event_impact(
     end_longitude = safe_float(
         payload.get("end_longitude"),
         None
+    )
+
+    location_match = resolve_corridor_from_coordinates(
+        latitude=latitude,
+        longitude=longitude,
+        store=store
+    )
+
+    if location_match.get("outside_bengaluru"):
+        raise ValueError(
+            "Selected location is outside Bengaluru coverage area. "
+            "Please choose a location within Bengaluru."
+        )
+
+    corridor = resolve_corridor_name(
+        location_match["corridor"],
+        store
     )
 
     event_type = payload.get(
@@ -728,50 +791,35 @@ def predict_event_impact(
     )
 
     predicted_incidents = max(
-        predicted_incidents,
+        safe_float(predicted_incidents),
         0.0
     )
 
     alert_probability = None
 
-    if (
-        forecast_details.get("alert_probability") is not None
-    ):
+    if forecast_details.get("alert_probability") is not None:
         alert_probability = float(
             forecast_details["alert_probability"][0]
         )
 
     context_multiplier = 1.0
 
-    if corridor.strip().lower() in [
-        "non-corridor",
-        "non corridor",
-        "unknown"
-    ]:
+    if is_bad_corridor_name(corridor):
         context_multiplier = 0.65
 
     try:
         forecast_score, forecast_level = calculate_forecast_risk_score(
             predicted_incidents=predicted_incidents,
-            incident_p95=store.get(
-                "incident_p95",
-                1.0
-            ),
-            incident_p99=store.get(
-                "incident_p99",
-                None
-            ),
+            incident_p95=store.get("incident_p95", 1.0),
+            incident_p99=store.get("incident_p99", None),
             alert_probability=alert_probability,
-            context_multiplier=context_multiplier
+            context_multiplier=context_multiplier,
         )
 
     except TypeError:
         forecast_score, forecast_level = calculate_forecast_risk_score(
             predicted_incidents,
-            store.get(
-                "incident_p95",
-                1.0
-            )
+            store.get("incident_p95", 1.0)
         )
 
     rush_hour = (
@@ -780,68 +828,28 @@ def predict_event_impact(
         (17 <= hour <= 21)
     )
 
-    event_score, event_level = calculate_event_impact(
+    base_event_score, base_event_level = calculate_event_impact(
         event_cause=event_cause,
         veh_type=veh_type,
         road_closure=road_closure,
         rush_hour=rush_hour
     )
 
-    priority_boost = {
-        "low": 0,
-        "medium": 4,
-        "high": 8,
-        "critical": 12,
-    }.get(
-        str(priority).strip().lower(),
-        4
+    adjusted_event_score, crowd_multiplier, weather_multiplier = calculate_adjusted_event_score(
+        base_event_score=base_event_score,
+        priority=priority,
+        event_type=event_type,
+        crowd_size=crowd_size,
+        weather=weather
     )
 
-    event_type_boost = {
-        "planned": 2,
-        "unplanned": 6,
-    }.get(
-        str(event_type).strip().lower(),
-        4
-    )
-
-    event_score = min(
-        event_score
-        +
-        priority_boost
-        +
-        event_type_boost,
-        100
-    )
-
-    crowd_multiplier = get_crowd_multiplier(
-        crowd_size
-    )
-
-    weather_multiplier = get_weather_multiplier(
-        weather
-    )
-
-    event_score = (
-        event_score
-        *
-        crowd_multiplier
-        *
-        weather_multiplier
-    )
-
-    event_score = max(
-        0,
-        min(event_score, 100)
-    )
-
-    event_level = get_risk_level_from_score(
-        event_score
+    adjusted_event_level = get_risk_level_from_score(
+        adjusted_event_score
     )
 
     eis_score, cause_risk_score = calculate_eis_score(
         forecast_score=forecast_score,
-        event_score=event_score,
+        adjusted_event_score=adjusted_event_score,
         profile=profile,
         store=store
     )
@@ -890,15 +898,13 @@ def predict_event_impact(
         road_closure=road_closure
     )
 
-    closure_probability = min(
-        max(
-            (
-                forecast_score * 0.35
-                +
-                event_score * 0.65
-            ) / 100,
-            0
-        ),
+    closure_probability = clamp(
+        (
+            forecast_score * 0.35
+            +
+            adjusted_event_score * 0.65
+        ) / 100,
+        0,
         1
     )
 
@@ -919,34 +925,42 @@ def predict_event_impact(
             0.0
         )
 
-    expected_after_event = max(
-        predicted_incidents,
-        0.0
+    expected_after_event, expected_delta, percentage_increase = calculate_operational_after_event_index(
+        normal_baseline=normal_baseline,
+        predicted_incidents=predicted_incidents,
+        eis_score=eis_score,
+        road_closure=road_closure,
+        crowd_size=crowd_size,
+        weather=weather,
+        store=store
     )
 
-    expected_delta = max(
-        expected_after_event - normal_baseline,
-        0.0
+    risk_delta_points = (
+        final_score
+        -
+        forecast_score
     )
 
-    if normal_baseline > 0:
-        percentage_increase = (
-                                      expected_delta
-                                      /
-                                      normal_baseline
-                              ) * 100
-    else:
-        percentage_increase = 100 if expected_after_event > 0 else 0
+    risk_delta_percent = 0.0
 
-    percentage_increase = max(
-        0,
-        min(percentage_increase, 999)
+    if forecast_score > 0:
+        risk_delta_percent = (
+            risk_delta_points
+            /
+            forecast_score
+        ) * 100
+
+    risk_delta_points = round(
+        risk_delta_points,
+        2
     )
 
-    shift_plan = build_shift_plan(
-        timestamp=timestamp,
-        duration_minutes=duration,
-        officers=officers
+    risk_delta_percent = max(
+        0.0,
+        min(
+            risk_delta_percent,
+            999.0
+        )
     )
 
     holdout_metrics = {}
@@ -1004,21 +1018,27 @@ def predict_event_impact(
             "event_type": event_type,
             "event_cause": event_cause,
             "priority": priority,
+
             "corridor": corridor,
-            "latitude": latitude,
-            "longitude": longitude,
-            "location_match": location_match,
             "veh_type": veh_type,
             "police_station": police_station,
+
             "timestamp": timestamp,
             "hour": hour,
             "weekday": weekday,
             "month": month,
+
             "road_closure": road_closure,
+
+            "latitude": latitude,
+            "longitude": longitude,
             "end_latitude": end_latitude,
             "end_longitude": end_longitude,
+
             "crowd_size": crowd_size,
             "weather": weather,
+
+            "location_match": location_match,
         },
 
         "forecast": {
@@ -1029,8 +1049,12 @@ def predict_event_impact(
         },
 
         "event": {
-            "event_score": event_score,
-            "event_level": event_level,
+            "base_event_score": base_event_score,
+            "base_event_level": base_event_level,
+
+            "event_score": adjusted_event_score,
+            "event_level": adjusted_event_level,
+
             "rush_hour": rush_hour,
             "crowd_multiplier": crowd_multiplier,
             "weather_multiplier": weather_multiplier,
@@ -1044,9 +1068,21 @@ def predict_event_impact(
 
         "baseline": {
             "normal_baseline": normal_baseline,
+
+            # This is operational pressure after event, not pure ML count.
             "predicted_after_event": expected_after_event,
+
+            # Pure model count is kept separately for honesty.
+            "ml_predicted_incidents": predicted_incidents,
+
             "expected_delta": expected_delta,
             "percentage_increase": percentage_increase,
+
+            # Correct risk comparison.
+            "normal_risk_score": forecast_score,
+            "with_event_risk_score": final_score,
+            "risk_delta_points": risk_delta_points,
+            "risk_delta_percent": risk_delta_percent,
 
             "baseline_source": profile_source,
             "baseline_reference": "rolling_24 → rolling_6 → corridor_avg",
@@ -1063,18 +1099,19 @@ def predict_event_impact(
 
         "confidence": prediction_interval,
 
-        "similar_events": similar_events,
-
         "history": {
             "profile_source": profile_source,
             "matched_hour": matched_hour,
+
             "lag_1": X.loc[0, "lag_1"],
             "lag_2": X.loc[0, "lag_2"],
             "lag_3": X.loc[0, "lag_3"],
             "lag_24": X.loc[0, "lag_24"],
+
             "rolling_6": X.loc[0, "rolling_6"],
             "rolling_24": X.loc[0, "rolling_24"],
             "rolling_168": X.loc[0, "rolling_168"],
+
             "corridor_avg": X.loc[0, "corridor_avg"],
             "corridor_volatility": X.loc[0, "corridor_volatility"],
         },
@@ -1085,8 +1122,6 @@ def predict_event_impact(
             "station": police_station or "Unknown",
             "shift_hours": 2 if final_level in ["LOW", "MODERATE"] else 4,
         },
-
-        "shift_plan": shift_plan,
 
         "diversion": diversion,
 
@@ -1100,6 +1135,8 @@ def predict_event_impact(
             "affected_radius_m": affected_radius,
             "secondary_radius_m": secondary_radius,
         },
+
+        "similar_events": similar_events,
 
         "deployment_order": deployment_order,
 

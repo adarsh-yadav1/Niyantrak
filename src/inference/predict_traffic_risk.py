@@ -371,6 +371,13 @@ def predict_traffic_risk():
         store=store
     )
 
+    if location_match.get("outside_bengaluru"):
+        print("\nERROR")
+        print("-" * 60)
+        print("Selected location is outside Bengaluru coverage area.")
+        print("Please enter coordinates within Bengaluru.")
+        return
+
     corridor = resolve_corridor_name(
         location_match["corridor"],
         store
