@@ -10,6 +10,9 @@ from src.forecasting.build_timeseries_dataset import build_timeseries_dataset
 from src.inference.police_station_resolver import (
     build_police_station_store,
 )
+from src.inference.location_validity_guard import (
+    build_restricted_zone_store,
+)
 
 FEATURES = [
     "corridor",
@@ -684,7 +687,6 @@ def build_location_and_cluster_store(
         "max_cause_risk": max_cause_risk,
     }
 
-
 def build_feature_store(
     data_path="data/traffic_events.csv",
     output_path="models/traffic_feature_store.pkl"
@@ -849,6 +851,12 @@ def build_feature_store(
 
     store.update(
         location_store
+    )
+
+    restricted_zone_store = build_restricted_zone_store()
+
+    store.update(
+        restricted_zone_store
     )
 
     joblib.dump(

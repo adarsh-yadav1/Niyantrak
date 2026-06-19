@@ -25,6 +25,11 @@ from src.inference.police_station_resolver import (
     is_bad_station_name,
 )
 
+# Added import
+from src.inference.location_validity_guard import (
+    validate_prediction_location,
+)
+
 from src.inference.similar_events import find_similar_events
 
 from src.scoring.event_impact import calculate_event_impact
@@ -1676,7 +1681,6 @@ def calculate_route_pressure_score(
         alert_score = clamp(
             safe_float(alert_probability) * 100,
             0,
-            100
         )
 
     route_pressure_score = (
@@ -1756,6 +1760,25 @@ def predict_event_impact(payload):
         longitude=longitude,
         store=store
     )
+
+    location_validity = validate_prediction_location(
+        latitude=latitude,
+        longitude=longitude,
+        store=store,
+        location_match=location_match
+    )
+
+    if not location_validity["is_valid"]:
+        return {
+            "blocked": True,
+            "error_type": "INVALID_LOCATION",
+            "message": location_validity["reason"],
+            "location_validity": location_validity,
+            "input": {
+                "latitude": latitude,
+                "longitude": longitude,
+            },
+        }
 
     # Added police station matching logic
     police_station_match = resolve_nearest_police_station(
@@ -2177,6 +2200,7 @@ def predict_event_impact(payload):
             "weather": weather,
 
             "location_match": location_match,
+            "location_validity": location_validity,
         },
 
         "forecast": {

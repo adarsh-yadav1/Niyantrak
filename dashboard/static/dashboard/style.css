@@ -1821,3 +1821,110 @@ h2::before {
         grid-template-columns: 1fr;
     }
 }
+
+
+.danger-card {
+    border: 1px solid rgba(248, 113, 113, 0.45);
+    background: linear-gradient(
+        145deg,
+        rgba(127, 29, 29, 0.30),
+        rgba(15, 23, 42, 0.88)
+    );
+}
+
+.danger-card h2 {
+    color: #fecaca;
+}
+
+/* ============================================================
+   FRIENDLY EVENT TIMING INPUT
+============================================================ */
+
+.timing-card {
+    padding: 18px;
+    border-radius: 20px;
+    background:
+        radial-gradient(circle at top left, rgba(34, 211, 238, 0.10), transparent 35%),
+        rgba(15, 23, 42, 0.58);
+    border: 1px solid rgba(34, 211, 238, 0.18);
+}
+
+.time-quick-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 12px 0 16px;
+}
+
+.time-chip {
+    border: 1px solid rgba(103, 232, 249, 0.22);
+    background: rgba(2, 6, 23, 0.72);
+    color: #cbd5e1;
+    padding: 10px 13px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.18s ease;
+}
+
+.time-chip:hover,
+.time-chip.active {
+    color: #ffffff;
+    background: linear-gradient(135deg, #06b6d4, #6366f1);
+    border-color: transparent;
+    box-shadow: 0 10px 26px rgba(6, 182, 212, 0.22);
+}
+
+.friendly-time-grid {
+    display: grid;
+    grid-template-columns: 1.5fr 0.75fr 0.75fr 0.75fr;
+    gap: 12px;
+}
+
+.friendly-time-grid input,
+.friendly-time-grid select {
+    width: 100%;
+}
+
+.mini-label {
+    display: block;
+    margin-bottom: 7px;
+    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.time-preview {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(2, 6, 23, 0.60);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+.time-preview strong {
+    color: #67e8f9;
+    font-family: var(--font-mono);
+}
+
+@media (max-width: 900px) {
+    .friendly-time-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 520px) {
+    .friendly-time-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .time-chip {
+        width: 100%;
+    }
+}
+

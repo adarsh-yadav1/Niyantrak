@@ -22,6 +22,38 @@ with open('data/police_station.csv', mode='w', newline='', encoding='utf-8') as 
 
 print("File 'police_station.csv' has been created successfully.")
 
+
+import csv
+import os
+
+# Define the file path
+file_path = os.path.join('data', 'restricted_zones.csv')
+
+# The data you provided
+zones_data = [
+    {"zone_name": "Ulsoor Lake", "zone_type": "lake", "latitude": 12.9822, "longitude": 77.6192, "radius_m": 650},
+    {"zone_name": "Sankey Tank", "zone_type": "lake", "latitude": 13.0067, "longitude": 77.5736, "radius_m": 550},
+    {"zone_name": "Hebbal Lake", "zone_type": "lake", "latitude": 13.0469, "longitude": 77.5865, "radius_m": 750},
+    {"zone_name": "Bellandur Lake", "zone_type": "lake", "latitude": 12.9352, "longitude": 77.6755, "radius_m": 1800},
+    {"zone_name": "Varthur Lake", "zone_type": "lake", "latitude": 12.9413, "longitude": 77.7412, "radius_m": 1500},
+    {"zone_name": "Madiwala Lake", "zone_type": "lake", "latitude": 12.9121, "longitude": 77.6179, "radius_m": 900},
+    {"zone_name": "Agara Lake", "zone_type": "lake", "latitude": 12.9216, "longitude": 77.6406, "radius_m": 650},
+    {"zone_name": "Lalbagh Botanical Garden", "zone_type": "park", "latitude": 12.9507, "longitude": 77.5848, "radius_m": 900},
+    {"zone_name": "Cubbon Park", "zone_type": "park", "latitude": 12.9763, "longitude": 77.5929, "radius_m": 850}
+]
+
+# Write the data to the CSV
+try:
+    with open(file_path, mode='w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=["zone_name", "zone_type", "latitude", "longitude", "radius_m"])
+        writer.writeheader()
+        writer.writerows(zones_data)
+    print(f"Success! Data has been written to {file_path}")
+except Exception as e:
+    print(f"An error occurred: {e}")
+
+
+
 from config import (
     DATA_PATH,
     FEATURE_STORE_PATH,
