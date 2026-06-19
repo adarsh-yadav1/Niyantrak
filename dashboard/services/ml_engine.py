@@ -28,7 +28,10 @@ from src.scoring.risk_score import (
     calculate_final_operational_risk,
 )
 
-from src.routing.diversion_engine import recommend_diversions
+from src.routing.diversion_engine import (
+    recommend_diversions,
+    get_candidate_corridors,
+)
 
 
 BASE_DIR = Path(settings.BASE_DIR)
@@ -450,6 +453,158 @@ def build_spatial_input_row(
         [row],
         columns=spatial_features
     )
+
+def estimate_corridor_state_for_diversion(
+    corridor,
+    hour,
+    weekday,
+    month,
+    model,
+    store
+):
+    """
+    Lightweight corridor forecast for diversion ranking.
+
+    This does NOT call predict_event_impact().
+    It checks whether a candidate diversion corridor is safe right now.
+
+    Important:
+    We rank by route pressure score, not only predicted incidents,
+    because rare-event hurdle models often output 0 incident count.
+    """
+
+    try:
+        location_match_stub = {
+            "confidence": "MEDIUM",
+            "used_bad_corridor": False,
+            "spatial_cluster_id": None,
+        }
+
+        profile, profile_source, matched_hour = get_profile_with_spatial_fallback(
+            store=store,
+            corridor=corridor,
+            hour=hour,
+            location_match=location_match_stub
+        )
+
+        X_candidate = build_input_row(
+            corridor=corridor,
+            hour=hour,
+            weekday=weekday,
+            month=month,
+            profile=profile
+        )
+
+        candidate_predicted_incidents, candidate_details = predict_single_forecast(
+            model,
+            X_candidate
+        )
+
+        candidate_predicted_incidents = max(
+            safe_float(candidate_predicted_incidents),
+            0.0
+        )
+
+        candidate_alert_probability = None
+
+        if candidate_details.get("alert_probability") is not None:
+            candidate_alert_probability = float(
+                candidate_details["alert_probability"][0]
+            )
+
+        try:
+            ml_forecast_score, ml_forecast_level = calculate_forecast_risk_score(
+                predicted_incidents=candidate_predicted_incidents,
+                incident_p95=store.get("incident_p95", 1.0),
+                incident_p99=store.get("incident_p99", None),
+                alert_probability=candidate_alert_probability,
+                context_multiplier=1.0,
+            )
+
+        except TypeError:
+            ml_forecast_score, ml_forecast_level = calculate_forecast_risk_score(
+                candidate_predicted_incidents,
+                store.get("incident_p95", 1.0)
+            )
+
+        route_pressure = calculate_route_pressure_score(
+            profile=profile,
+            store=store,
+            ml_forecast_score=ml_forecast_score,
+            predicted_incidents=candidate_predicted_incidents,
+            alert_probability=candidate_alert_probability
+        )
+
+        return {
+            # Used by diversion_engine ranking
+            "forecast_score": route_pressure["route_pressure_score"],
+            "forecast_level": route_pressure["route_pressure_level"],
+
+            # Keep pure ML values separately for honesty
+            "ml_forecast_score": ml_forecast_score,
+            "ml_forecast_level": ml_forecast_level,
+            "predicted_incidents": candidate_predicted_incidents,
+
+            # Route pressure explainability
+            "historical_load": route_pressure["historical_load"],
+            "load_score": route_pressure["load_score"],
+            "alert_score": route_pressure["alert_score"],
+            "volatility_score": route_pressure["volatility_score"],
+
+            "alert_probability": candidate_alert_probability,
+            "profile_source": profile_source,
+            "matched_hour": matched_hour,
+            "status": "OK",
+        }
+
+    except Exception as e:
+        return {
+            "forecast_score": 50.0,
+            "forecast_level": "UNKNOWN",
+
+            "ml_forecast_score": 0.0,
+            "ml_forecast_level": "UNKNOWN",
+            "predicted_incidents": 0.0,
+
+            "historical_load": 0.0,
+            "load_score": 0.0,
+            "alert_score": 0.0,
+            "volatility_score": 0.0,
+
+            "alert_probability": None,
+            "profile_source": "state check failed",
+            "matched_hour": None,
+            "status": f"FAILED: {e}",
+        }
+
+def build_diversion_corridor_state_lookup(
+    affected_corridor,
+    hour,
+    weekday,
+    month,
+    model,
+    store
+):
+    candidates = get_candidate_corridors(
+        affected_corridor,
+        max_depth=2
+    )
+
+    corridor_states = {}
+
+    for candidate in candidates:
+        candidate_corridor = candidate["corridor"]
+
+        corridor_states[candidate_corridor] = estimate_corridor_state_for_diversion(
+            corridor=candidate_corridor,
+            hour=hour,
+            weekday=weekday,
+            month=month,
+            model=model,
+            store=store
+        )
+
+    return corridor_states
 
 
 def get_risk_level_from_score(score):
@@ -1197,6 +1352,136 @@ def build_operational_metrics(model_metrics):
     }
 
 
+
+def calculate_route_pressure_score(
+    profile,
+    store,
+    ml_forecast_score,
+    predicted_incidents,
+    alert_probability
+):
+    """
+    Diversion ranking should not use only predicted incident count.
+
+    The hurdle model often returns 0 for rare events.
+    For diversion route safety, we also need historical route pressure:
+    rolling load, corridor average, volatility, and alert probability.
+    """
+
+    incident_p95 = max(
+        safe_float(store.get("incident_p95"), 1.0),
+        1.0
+    )
+
+    lag_1 = safe_float(
+        profile.get("lag_1"),
+        0.0
+    )
+
+    lag_24 = safe_float(
+        profile.get("lag_24"),
+        0.0
+    )
+
+    rolling_6 = safe_float(
+        profile.get("rolling_6"),
+        0.0
+    )
+
+    rolling_24 = safe_float(
+        profile.get("rolling_24"),
+        0.0
+    )
+
+    rolling_168 = safe_float(
+        profile.get("rolling_168"),
+        0.0
+    )
+
+    corridor_avg = safe_float(
+        profile.get("corridor_avg"),
+        0.0
+    )
+
+    corridor_volatility = safe_float(
+        profile.get("corridor_volatility"),
+        0.0
+    )
+
+    historical_load = max(
+        lag_1,
+        lag_24 * 0.80,
+        rolling_6,
+        rolling_24 * 0.90,
+        rolling_168 * 0.70,
+        corridor_avg * 0.85
+    )
+
+    load_score = clamp(
+        (historical_load / incident_p95) * 100,
+        0,
+        100
+    )
+
+    volatility_score = clamp(
+        (corridor_volatility / incident_p95) * 45,
+        0,
+        45
+    )
+
+    predicted_score = clamp(
+        (safe_float(predicted_incidents) / incident_p95) * 100,
+        0,
+        100
+    )
+
+    if alert_probability is None:
+        alert_score = 0.0
+    else:
+        alert_score = clamp(
+            safe_float(alert_probability) * 100,
+            0,
+            100
+        )
+
+    route_pressure_score = (
+        0.45 * load_score
+        +
+        0.25 * alert_score
+        +
+        0.20 * volatility_score
+        +
+        0.10 * predicted_score
+    )
+
+    route_pressure_score = max(
+        route_pressure_score,
+        safe_float(ml_forecast_score)
+    )
+
+    route_pressure_score = clamp(
+        route_pressure_score,
+        0,
+        100
+    )
+
+    route_pressure_level = get_risk_level_from_score(
+        route_pressure_score
+    )
+
+    return {
+        "route_pressure_score": route_pressure_score,
+        "route_pressure_level": route_pressure_level,
+        "historical_load": historical_load,
+        "load_score": load_score,
+        "alert_score": alert_score,
+        "volatility_score": volatility_score,
+        "predicted_score": predicted_score,
+    }
+
+
+
+
 def predict_event_impact(payload):
     model = load_model()
     store = load_feature_store()
@@ -1434,10 +1719,20 @@ def predict_event_impact(payload):
         road_closure=road_closure
     )
 
+    diversion_corridor_states = build_diversion_corridor_state_lookup(
+        affected_corridor=corridor,
+        hour=hour,
+        weekday=weekday,
+        month=month,
+        model=model,
+        store=store
+    )
+
     diversion = recommend_diversions(
         affected_corridor=corridor,
         final_risk_level=final_level,
-        road_closure=road_closure
+        road_closure=road_closure,
+        corridor_states=diversion_corridor_states
     )
 
     duration = estimate_duration_minutes(

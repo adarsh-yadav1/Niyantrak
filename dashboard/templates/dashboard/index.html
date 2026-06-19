@@ -995,6 +995,53 @@
                                 {% endfor %}
                             </div>
                         </div>
+
+                        {% if result.diversion.candidate_evaluations %}
+                            <div class="terminal-header">
+                                State-aware diversion ranking
+                            </div>
+
+                            <div class="diversion-state-table">
+                                <div class="diversion-state-row diversion-state-head">
+                                    <span>Candidate</span>
+                                    <span>Route Risk</span>
+                                    <span>Pressure Score</span>
+                                    <span>Hist. Load</span>
+                                    <span>ML Incidents</span>
+                                    <span>Route</span>
+                                </div>
+
+                                {% for item in result.diversion.candidate_evaluations %}
+                                    <div class="diversion-state-row">
+                                        <strong>{{ item.corridor }}</strong>
+
+                                        <span class="badge severity-{{ item.forecast_level|lower }}">
+                                            {{ item.forecast_level }}
+                                        </span>
+
+                                        <strong class="mono">
+                                            {{ item.forecast_score|floatformat:1 }}%
+                                        </strong>
+
+                                        <strong class="mono">
+                                            {{ item.historical_load|floatformat:2 }}
+                                        </strong>
+
+                                        <strong class="mono">
+                                            {{ item.predicted_incidents|floatformat:2 }}
+                                        </strong>
+
+                                        <span>
+                                            {{ item.route_type }}
+                                        </span>
+                                    </div>
+                                {% endfor %}
+                            </div>
+
+                            <p class="muted terminal-text">
+                                &gt; Diversion ranking uses route pressure score: historical load, alert probability, volatility, and ML incident forecast.
+                            </p>
+                        {% endif %}
                     </div>
 
                     <div class="card full fade-in">

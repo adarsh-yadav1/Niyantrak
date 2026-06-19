@@ -1771,3 +1771,53 @@ h2::before {
         grid-template-columns: 1fr;
     }
 }
+
+/* ============================================================
+   STATE-AWARE DIVERSION RANKING
+============================================================ */
+
+.diversion-state-table {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.diversion-state-row {
+    display: grid;
+    grid-template-columns: 1.3fr 0.8fr 0.9fr 0.8fr 0.8fr 0.8fr;
+    gap: 12px;
+    align-items: center;
+    padding: 13px 14px;
+    border-radius: 14px;
+    background: rgba(2, 6, 23, 0.44);
+    border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.diversion-state-head {
+    background: rgba(6, 182, 212, 0.10);
+    border-color: rgba(6, 182, 212, 0.22);
+}
+
+.diversion-state-head span {
+    color: #67e8f9;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 12px;
+}
+
+.diversion-state-row strong {
+    color: #ffffff;
+    font-size: 13px;
+}
+
+.diversion-state-row span {
+    color: #cbd5e1;
+    font-size: 13px;
+}
+
+@media (max-width: 900px) {
+    .diversion-state-row {
+        grid-template-columns: 1fr;
+    }
+}
