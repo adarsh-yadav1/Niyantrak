@@ -82,7 +82,7 @@
             Forecast event impact, affected area, manpower, barricading, and diversion using ML intelligence and real map coordinates.
         </p>
 
-        {% if result %}
+        {% if result and not result.blocked %}
             <div class="hero-stats">
                 <div class="hero-stat">
                     <span>Final Risk</span>
@@ -341,15 +341,80 @@
                 >
             </div>
 
-            <div class="field">
-                <label>Timestamp</label>
+            <div class="form-group timing-card wide">
+                <label>Event Time</label>
+
+                <div class="manual-time-grid">
+                    <div class="time-field date-field">
+                        <span class="mini-label">Date</span>
+                        <input
+                            type="date"
+                            id="event_date"
+                            name="event_date"
+                            value="{{ form.event_date }}"
+                        >
+                    </div>
+
+                    <div class="time-field">
+                        <span class="mini-label">Hour</span>
+                        <select id="event_hour" name="event_hour">
+                            <option value="1">01</option>
+                            <option value="2">02</option>
+                            <option value="3">03</option>
+                            <option value="4">04</option>
+                            <option value="5">05</option>
+                            <option value="6">06</option>
+                            <option value="7">07</option>
+                            <option value="8">08</option>
+                            <option value="9">09</option>
+                            <option value="10">10</option>
+                            <option value="11">11</option>
+                            <option value="12">12</option>
+                        </select>
+                    </div>
+
+                    <div class="time-field">
+                        <span class="mini-label">Minute</span>
+                        <select id="event_minute" name="event_minute">
+                            <option value="0">00</option>
+                            <option value="5">05</option>
+                            <option value="10">10</option>
+                            <option value="15">15</option>
+                            <option value="20">20</option>
+                            <option value="25">25</option>
+                            <option value="30">30</option>
+                            <option value="35">35</option>
+                            <option value="40">40</option>
+                            <option value="45">45</option>
+                            <option value="50">50</option>
+                            <option value="55">55</option>
+                        </select>
+                    </div>
+
+                    <div class="time-field">
+                        <span class="mini-label">Period</span>
+                        <select id="event_ampm" name="event_ampm">
+                            <option value="AM">AM</option>
+                            <option value="PM">PM</option>
+                        </select>
+                    </div>
+                </div>
 
                 <input
-                    type="datetime-local"
-                    name="timestamp"
-                    id="timestamp"
-                    value="{{ form.timestamp }}"
-                >
+                    type="hidden"
+                    id="event_datetime"
+                    name="event_datetime"
+                    value="{{ form.event_datetime }}"
+                />
+
+                <div class="selected-time-preview">
+                    <span>Selected event time</span>
+                    <strong id="timePreview">Not selected</strong>
+                </div>
+
+                <small>
+                    Select the reported or expected event time. The model will derive hour, weekday, and month automatically.
+                </small>
             </div>
 
             <div class="field">
@@ -388,7 +453,7 @@
                 </div>
 
                 <div class="map-mini-stats">
-                    {% if result %}
+                    {% if result and not result.blocked %}
                         <span>Primary: {{ result.map.affected_radius_m }}m</span>
                         <span>Secondary: {{ result.map.secondary_radius_m }}m</span>
                         <span>Risk: {{ result.final.final_level }}</span>
@@ -401,7 +466,7 @@
             <div class="map-container">
                 <div id="map"></div>
 
-                {% if result %}
+                {% if result and not result.blocked %}
                 <div class="map-overlay-card">
                     <div class="overlay-title">
                         Impact Zone
@@ -431,971 +496,1055 @@
         </div>
 
         {% if result %}
-            <section class="hero-result-section fade-in">
-
-                <div class="hero-left-panel">
-
-                    <div class="hero-kicker">
-                        Live Operational Decision
+            {% if result.blocked %}
+                <div class="card full danger-card">
+                    <div class="card-kicker">
+                        Invalid Location
                     </div>
 
-                    <h1 class="hero-risk-title">
-                        {{ result.final.final_level }} RISK
-                    </h1>
+                    <h2>Prediction blocked</h2>
 
-                    <div class="hero-risk-score">
-                        {{ result.final.final_score|floatformat:1 }}%
+                    <p class="muted">
+                        {{ result.message }}
+                    </p>
+
+                    <div class="terminal-text">
+                        &gt; Select a point on or near a road corridor. The system does not generate predictions for lakes, parks, or non-road zones.
                     </div>
-
-                    <div class="hero-risk-subtitle">
-                        Final operational risk based on forecast, live event impact, crowd/weather modifiers, and historical cause risk.
-                    </div>
-
-                    <div class="hero-eis-card">
-                        <div>
-                            <span>Composite EIS</span>
-                            <strong>{{ result.eis.score|floatformat:1 }}%</strong>
-                        </div>
-
-                        <div>
-                            <span>EIS Level</span>
-                            <strong class="badge severity-{{ result.eis.level|lower }}">
-                                {{ result.eis.level }}
-                            </strong>
-                        </div>
-                    </div>
-
-                    <div class="hero-action-grid">
-
-                        <div class="hero-action-card">
-                            <span>Officers</span>
-                            <strong>{{ result.resources.officers }}</strong>
-                        </div>
-
-                        <div class="hero-action-card">
-                            <span>Barricades</span>
-                            <strong>{{ result.resources.barricades }}</strong>
-                        </div>
-
-                        <div class="hero-action-card">
-                            <span>Primary Radius</span>
-                            <strong>{{ result.map.affected_radius_m }}m</strong>
-                        </div>
-
-                        <div class="hero-action-card">
-                            <span>Spillover Radius</span>
-                            <strong>{{ result.map.secondary_radius_m }}m</strong>
-                        </div>
-
-                    </div>
-
-                    <div class="hero-action-message">
-                        {{ result.action }}
-                    </div>
-
-                    <button
-                        type="button"
-                        class="hero-copy-btn"
-                        onclick="copyDeploymentOrder()"
-                    >
-                        Copy Deployment Order
-                    </button>
-
                 </div>
+            {% else %}
+                <section class="hero-result-section fade-in">
 
-                <div class="hero-map-panel">
+                    <div class="hero-left-panel">
 
-                    <div class="hero-map-topbar">
-                        <div>
-                            <span class="dot-live"></span>
-                            Impact Map
+                        <div class="hero-kicker">
+                            Live Operational Decision
                         </div>
 
-                        <div>
-                            {{ result.input.corridor }}
-                        </div>
-                    </div>
+                        <h1 class="hero-risk-title">
+                            {{ result.final.final_level }} RISK
+                        </h1>
 
-                    <div id="heroMap"></div>
-
-                    <div class="hero-map-overlay">
-                        <div>
-                            <span>Location</span>
-                            <strong>
-                                {{ result.input.latitude }},
-                                {{ result.input.longitude }}
-                            </strong>
+                        <div class="hero-risk-score">
+                            {{ result.final.final_score|floatformat:1 }}%
                         </div>
 
-                        <div>
-                            <span>Match</span>
-                            <strong>
-                                {{ result.input.location_match.confidence }}
-                            </strong>
-                        </div>
-                    </div>
-
-                </div>
-
-            </section>
-
-            <textarea
-                id="deploymentOrder"
-                class="hidden-deployment-order"
-                readonly
-            >{{ result.deployment_order }}</textarea>
-
-            <div class="section-divider">
-                <span>Detailed Technical Analysis</span>
-            </div>
-
-            <div class="results-container">
-
-                <div class="cards">
-
-                    <div class="card highlight fade-in">
-                        <div class="card-kicker">
-                            ML Decision Layer
+                        <div class="hero-risk-subtitle">
+                            Final operational risk based on forecast, live event impact, crowd/weather modifiers, and historical cause risk.
                         </div>
 
-                        <h2>Traffic Impact Matrix</h2>
-
-                        <div class="kv">
-                            <span>Severity Level</span>
-                            <strong class="badge severity-{{ result.final.final_level|lower }}">
-                                {{ result.final.final_level }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Estimated Duration</span>
-                            <strong class="mono">~{{ result.final.duration_minutes }} min</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Corridor Affected</span>
-                            <strong class="mono">{{ result.input.corridor }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Forecast Risk</span>
-                            <strong class="mono">{{ result.forecast.forecast_score|floatformat:1 }}%</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Forecast Source</span>
-                            <strong class="mono">
-                                {{ result.forecast.forecast_source }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Event Impact</span>
-                            <strong class="mono">{{ result.event.event_score|floatformat:1 }}%</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Final Risk Score</span>
-                            <strong class="mono highlight-text">
-                                {{ result.final.final_score|floatformat:1 }}%
-                            </strong>
-                        </div>
-
-                        <div class="risk-bars">
+                        <div class="hero-eis-card">
                             <div>
-                                <span>Forecast</span>
-                                <div class="bar-track">
-                                    <div
-                                        class="bar-fill forecast"
-                                        style="width: {{ result.forecast.forecast_score|floatformat:0 }}%;"
-                                    ></div>
-                                </div>
+                                <span>Composite EIS</span>
+                                <strong>{{ result.eis.score|floatformat:1 }}%</strong>
                             </div>
 
                             <div>
-                                <span>Event</span>
-                                <div class="bar-track">
-                                    <div
-                                        class="bar-fill event"
-                                        style="width: {{ result.event.event_score|floatformat:0 }}%;"
-                                    ></div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <span>Final</span>
-                                <div class="bar-track">
-                                    <div
-                                        class="bar-fill final"
-                                        style="width: {{ result.final.final_score|floatformat:0 }}%;"
-                                    ></div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <p class="muted terminal-text">
-                            &gt; Forecast risk is based only on historical model prediction. Live event severity is added separately through EIS and final operational risk.
-                        </p>
-                    </div>
-
-                    <div class="card fade-in">
-                        <div class="card-kicker">
-                            Location Intelligence
-                        </div>
-
-                        <h2>Coordinate Resolver</h2>
-
-                        <div class="kv">
-                            <span>Latitude</span>
-                            <strong class="mono">{{ result.input.latitude }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Longitude</span>
-                            <strong class="mono">{{ result.input.longitude }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Inferred Corridor</span>
-                            <strong class="mono">{{ result.input.corridor }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Match Method</span>
-                            <strong class="mono">{{ result.input.location_match.matched_by }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Nearest Police Station</span>
-                            <strong>
-                                {{ result.input.police_station }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Station Match Method</span>
-                            <strong>
-                                {{ result.input.police_station_match.matched_by }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Station Distance</span>
-                            <strong class="mono">
-                                {% if result.input.police_station_match.distance_m %}
-                                    {{ result.input.police_station_match.distance_m|floatformat:0 }} m
-                                {% else %}
-                                    —
-                                {% endif %}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Station Match Confidence</span>
-                            <strong>
-                                {{ result.input.police_station_match.confidence }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Match Distance</span>
-                            <strong class="mono">
-                                {% if result.input.location_match.distance_m %}
-                                    {{ result.input.location_match.distance_m }}m
-                                {% else %}
-                                    —
-                                {% endif %}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Match Confidence</span>
-                            <strong class="mono">{{ result.input.location_match.confidence }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Spatial Cluster</span>
-                            <strong class="mono">{{ result.input.location_match.spatial_cluster_id }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Nearest Hotspot</span>
-                            <strong class="mono">
-                                {% if result.input.location_match.nearest_hotspot_distance_m %}
-                                    {{ result.input.location_match.nearest_hotspot_distance_m }}m
-                                {% else %}
-                                    —
-                                {% endif %}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Spatial Density</span>
-                            <strong class="mono">{{ result.input.location_match.spatial_density_at_point }}</strong>
-                        </div>
-                    </div>
-
-                    <div class="card fade-in">
-                        <div class="card-kicker">
-                            Event Quantification
-                        </div>
-
-                        <h2>Composite EIS</h2>
-
-                        <div class="kv">
-                            <span>EIS Score</span>
-                            <strong class="mono">{{ result.eis.score|floatformat:1 }}%</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>EIS Level</span>
-                            <strong class="badge severity-{{ result.eis.level|lower }}">
-                                {{ result.eis.level }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Event Impact</span>
-                            <strong class="mono">
-                                {{ result.event.event_score|floatformat:1 }}%
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Crowd Size Used</span>
-                            <strong class="mono">
-                                {{ result.event.crowd_size_used|default:"not_applicable" }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Crowd Multiplier</span>
-                            <strong class="mono">
-                                {{ result.event.crowd_multiplier|floatformat:2 }}x
-                            </strong>
-                        </div>
-
-                    </div>
-
-                    <div class="card full fade-in">
-                        <div class="card-kicker">
-                            Fallback Validation
-                        </div>
-
-                        <h2>Cluster Fallback Ablation Study</h2>
-
-                        {% if result.ablation.available %}
-                            <p class="model-headline">
-                                {{ result.ablation.conclusion }}
-                            </p>
-
-                            <div class="ablation-grid">
-                                <div class="ablation-card">
-                                    <span>Rows Tested</span>
-                                    <strong>{{ result.ablation.rows_tested }}</strong>
-                                </div>
-
-                                <div class="ablation-card">
-                                    <span>Corridor MAE</span>
-                                    <strong>{{ result.ablation.normal_profile.mae|floatformat:4 }}</strong>
-                                </div>
-
-                                <div class="ablation-card">
-                                    <span>Cluster MAE</span>
-                                    <strong>{{ result.ablation.cluster_fallback.mae|floatformat:4 }}</strong>
-                                </div>
-
-                                <div class="ablation-card">
-                                    <span>MAE Improvement</span>
-                                    <strong>
-                                        {{ result.ablation.comparison.mae_improvement_pct|floatformat:2 }}%
-                                    </strong>
-                                </div>
-                            </div>
-
-                            <div class="comparison-table">
-                                <div class="comparison-row comparison-head">
-                                    <span>Method</span>
-                                    <span>MAE</span>
-                                    <span>RMSE</span>
-                                    <span>R²</span>
-                                </div>
-
-                                <div class="comparison-row">
-                                    <span>{{ result.ablation.normal_profile.label }}</span>
-                                    <strong>{{ result.ablation.normal_profile.mae|floatformat:4 }}</strong>
-                                    <strong>{{ result.ablation.normal_profile.rmse|floatformat:4 }}</strong>
-                                    <strong>
-                                        {% if result.ablation.normal_profile.r2 is not None %}
-                                            {{ result.ablation.normal_profile.r2|floatformat:4 }}
-                                        {% else %}
-                                            —
-                                        {% endif %}
-                                    </strong>
-                                </div>
-
-                                <div class="comparison-row">
-                                    <span>{{ result.ablation.cluster_fallback.label }}</span>
-                                    <strong>{{ result.ablation.cluster_fallback.mae|floatformat:4 }}</strong>
-                                    <strong>{{ result.ablation.cluster_fallback.rmse|floatformat:4 }}</strong>
-                                    <strong>
-                                        {% if result.ablation.cluster_fallback.r2 is not None %}
-                                            {{ result.ablation.cluster_fallback.r2|floatformat:4 }}
-                                        {% else %}
-                                            —
-                                        {% endif %}
-                                    </strong>
-                                </div>
-                            </div>
-
-                            <div class="terminal-header">
-                                Evidence note
-                            </div>
-
-                            <p class="muted terminal-text">
-                                &gt; {{ result.ablation.note }}
-                            </p>
-
-                        {% else %}
-                            <p class="muted">
-                                {{ result.ablation.message }}
-                            </p>
-
-                            <div class="terminal-text">
-                                Run:
-                                <br>
-                                python run_cluster_ablation.py
-                            </div>
-                        {% endif %}
-                    </div>
-
-                    <div class="card full fade-in">
-                        <div class="card-kicker">
-                            Operational Impact Comparison
-                        </div>
-
-                        <h2>Pre-event vs Post-event Baseline</h2>
-
-                        <div class="comparison-table">
-                            <div class="comparison-row comparison-head">
-                                <span>Metric</span>
-                                <span>Normal Condition</span>
-                                <span>With Event</span>
-                                <span>Delta</span>
-                            </div>
-
-                            <div class="comparison-row">
-                                <span>Incident volume</span>
-
-                                <strong>
-                                    {{ result.baseline.normal_baseline|floatformat:2 }}
-                                </strong>
-
-                                <strong>
-                                    {{ result.baseline.predicted_after_event|floatformat:2 }}
-                                </strong>
-
-                                <strong>
-                                    +{{ result.baseline.expected_delta|floatformat:2 }}
-                                </strong>
-                            </div>
-
-                            <div class="comparison-row">
-                                <span>Risk score</span>
-
-                                <strong>
-                                    {{ result.baseline.normal_risk_score|floatformat:1 }}%
-                                </strong>
-
-                                <strong>
-                                    {{ result.baseline.with_event_risk_score|floatformat:1 }}%
-                                </strong>
-
-                                <strong>
-                                    +{{ result.baseline.risk_delta_points|floatformat:1 }}
-                                </strong>
-                            </div>
-
-                            <div class="comparison-row">
-                                <span>Operational state</span>
-                                <strong>Baseline</strong>
-                                <strong>{{ result.final.final_level }}</strong>
-                                <strong style="line-height: 1.5; font-size: 12px; color: #cbd5e1;">
-                                    {{ result.action }}
+                                <span>EIS Level</span>
+                                <strong class="badge severity-{{ result.eis.level|lower }}">
+                                    {{ result.eis.level }}
                                 </strong>
                             </div>
                         </div>
 
-                        <div class="terminal-text">
-                            Baseline source: {{ result.baseline.baseline_source }}
-                        </div>
-                    </div>
+                        <div class="hero-action-grid">
 
-                    <div class="card fade-in" style="animation-delay: 0.1s;">
-                        <div class="card-kicker">
-                            Deployment Layer
-                        </div>
-
-                        <h2>Resource Allocation</h2>
-
-                        <div class="kv">
-                            <span>Personnel Required</span>
-                            <strong class="mono">{{ result.resources.officers }} Officers</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Primary Station</span>
-                            <strong class="mono">{{ result.resources.station }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Shift Extension</span>
-                            <strong class="mono">{{ result.resources.shift_hours }}h</strong>
-                        </div>
-
-                        <ul class="task-list">
-                            <li><span>•</span> {{ result.resources.station }} — Primary traffic control</li>
-                            <li><span>•</span> {{ result.resources.station }} — Secondary monitoring</li>
-                            <li><span>•</span> {{ result.resources.station }} — Approach junction monitoring</li>
-                        </ul>
-                    </div>
-
-                    <div class="card fade-in" style="animation-delay: 0.2s;">
-                        <div class="card-kicker">
-                            Control Layer
-                        </div>
-
-                        <h2>Barricading Protocol</h2>
-
-                        <div class="kv">
-                            <span>Action Required</span>
-                            <strong>
-                                {% if result.resources.barricades > 0 %}
-                                    <span class="badge required">Yes</span>
-                                {% else %}
-                                    <span class="badge none">No</span>
-                                {% endif %}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Units Needed</span>
-                            <strong class="mono">{{ result.resources.barricades }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Closure Probability</span>
-                            <strong class="mono">{{ result.final.closure_probability|floatformat:2 }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Primary Affected Area</span>
-                            <strong class="mono">{{ result.final.affected_radius_m }}m</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Secondary Monitoring Area</span>
-                            <strong class="mono">{{ result.final.secondary_radius_m }}m</strong>
-                        </div>
-                    </div>
-
-                    <div class="card fade-in" style="animation-delay: 0.3s;">
-                        <div class="card-kicker">
-                            Routing Layer
-                        </div>
-
-                        <h2>Diversion Routes</h2>
-
-                        <div class="kv">
-                            <span>Primary Detour</span>
-                            <strong class="mono">{{ result.diversion.primary_detour }}</strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Secondary Detour</span>
-                            <strong class="mono">{{ result.diversion.secondary_detour }}</strong>
-                        </div>
-
-                        <p class="muted terminal-text">
-                            &gt; {{ result.diversion.message }}
-                        </p>
-
-                        <div class="support-corridors">
-                            <span>Support Corridors:</span>
-
-                            <div class="tags">
-                                {% for c in result.diversion.support_corridors %}
-                                    <span class="tag">{{ c }}</span>
-                                {% empty %}
-                                    <span class="tag none">None</span>
-                                {% endfor %}
-                            </div>
-                        </div>
-
-                        {% if result.diversion.candidate_evaluations %}
-                            <div class="terminal-header">
-                                State-aware diversion ranking
+                            <div class="hero-action-card">
+                                <span>Officers</span>
+                                <strong>{{ result.resources.officers }}</strong>
                             </div>
 
-                            <div class="diversion-state-table">
-                                <div class="diversion-state-row diversion-state-head">
-                                    <span>Candidate</span>
-                                    <span>Route Risk</span>
-                                    <span>Pressure Score</span>
-                                    <span>Hist. Load</span>
-                                    <span>ML Incidents</span>
-                                    <span>Route</span>
-                                </div>
-
-                                {% for item in result.diversion.candidate_evaluations %}
-                                    <div class="diversion-state-row">
-                                        <strong>{{ item.corridor }}</strong>
-
-                                        <span class="badge severity-{{ item.forecast_level|lower }}">
-                                            {{ item.forecast_level }}
-                                        </span>
-
-                                        <strong class="mono">
-                                            {{ item.forecast_score|floatformat:1 }}%
-                                        </strong>
-
-                                        <strong class="mono">
-                                            {{ item.historical_load|floatformat:2 }}
-                                        </strong>
-
-                                        <strong class="mono">
-                                            {{ item.predicted_incidents|floatformat:2 }}
-                                        </strong>
-
-                                        <span>
-                                            {{ item.route_type }}
-                                        </span>
-                                    </div>
-                                {% endfor %}
+                            <div class="hero-action-card">
+                                <span>Barricades</span>
+                                <strong>{{ result.resources.barricades }}</strong>
                             </div>
 
-                            <p class="muted terminal-text">
-                                &gt; Diversion ranking uses route pressure score: historical load, alert probability, volatility, and ML incident forecast.
-                            </p>
-                        {% endif %}
-                    </div>
-
-                    <div class="card full fade-in">
-                        <div class="card-kicker">
-                            Historical Validation
-                        </div>
-
-                        <h2>Operational Model Performance</h2>
-
-                        <p class="model-headline">
-                            {{ result.operational_metrics.headline }}
-                        </p>
-
-                        <div class="ops-metric-grid">
-                            {% for card in result.operational_metrics.summary_cards %}
-                                <div class="ops-metric-card">
-                                    <span>{{ card.title }}</span>
-                                    <strong>{{ card.value }}</strong>
-                                    <p>{{ card.description }}</p>
-                                </div>
-                            {% endfor %}
-                        </div>
-
-                        <div class="terminal-header">
-                            Metric translation
-                        </div>
-
-                        <div class="metric-translation-table">
-                            <div class="metric-translation-row metric-translation-head">
-                                <span>Metric</span>
-                                <span>Raw Value</span>
-                                <span>Operational Meaning</span>
+                            <div class="hero-action-card">
+                                <span>Primary Radius</span>
+                                <strong>{{ result.map.affected_radius_m }}m</strong>
                             </div>
 
-                            {% for row in result.operational_metrics.explanation_rows %}
-                                <div class="metric-translation-row">
-                                    <strong>{{ row.metric }}</strong>
-                                    <strong class="mono">{{ row.raw_value }}</strong>
-                                    <span>{{ row.operational_meaning }}</span>
-                                </div>
-                            {% endfor %}
-                        </div>
-
-                        <p class="muted terminal-text">
-                            &gt; The alert classifier is the main decision layer. Exact incident-count regression is secondary because the data is sparse and zero-heavy.
-                        </p>
-                    </div>
-
-                    <div class="card fade-in">
-                        <div class="card-kicker">
-                            Model Uncertainty
-                        </div>
-
-                        <h2>{{ result.confidence.label }}</h2>
-
-                        <div class="kv">
-                            <span>Expected Incidents</span>
-                            <strong class="mono">
-                                {{ result.confidence.expected|floatformat:2 }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Lower Estimate</span>
-                            <strong class="mono">
-                                {{ result.confidence.lower|floatformat:2 }}
-                            </strong>
-                        </div>
-
-                        <div class="kv">
-                            <span>Upper Estimate</span>
-                            <strong class="mono">
-                                {{ result.confidence.upper|floatformat:2 }}
-                            </strong>
-                        </div>
-
-                        <div class="terminal-header">
-                            Interpretation
-                        </div>
-
-                        <p class="muted terminal-text">
-                            &gt; {{ result.confidence.method }}.
-                            {% if result.confidence.type == "catboost_quantile" %}
-                                This interval uses CatBoost lower and upper quantile regressors.
-                                {% if result.confidence.coverage %}
-                                    Holdout coverage: {{ result.confidence.coverage|floatformat:3 }}.
-                                {% endif %}
-                            {% else %}
-                                This is a validation-error based estimate, not a guaranteed statistical interval.
-                            {% endif %}
-                        </p>
-                    </div>
-
-                    <div class="card full fade-in">
-                        <div class="card-kicker">
-                            Historical Grounding
-                        </div>
-
-                        <h2>Similar Past Events</h2>
-
-                        {% if result.similar_events %}
-                            <div class="similar-events">
-                                {% for event in result.similar_events %}
-                                    <div class="similar-event-card">
-                                        <div class="similar-event-top">
-                                            <strong>{{ event.event_cause }}</strong>
-                                            <span>Score {{ event.similarity_score }}</span>
-                                        </div>
-
-                                        <div class="kv">
-                                            <span>Corridor</span>
-                                            <strong class="mono">{{ event.corridor }}</strong>
-                                        </div>
-
-                                        <div class="kv">
-                                            <span>Time</span>
-                                            <strong class="mono">{{ event.start_datetime }}</strong>
-                                        </div>
-
-                                        <div class="kv">
-                                            <span>Distance</span>
-                                            <strong class="mono">{{ event.distance_m }}m</strong>
-                                        </div>
-
-                                        <div class="kv">
-                                            <span>Duration</span>
-                                            <strong class="mono">{{ event.duration_minutes }} min</strong>
-                                        </div>
-
-                                        <div class="kv">
-                                            <span>Road Closure</span>
-                                            <strong class="mono">{{ event.road_closure }}</strong>
-                                        </div>
-                                    </div>
-                                {% endfor %}
+                            <div class="hero-action-card">
+                                <span>Spillover Radius</span>
+                                <strong>{{ result.map.secondary_radius_m }}m</strong>
                             </div>
-                        {% else %}
-                            <p class="muted terminal-text">
-                                &gt; No similar historical events found.
-                            </p>
-                        {% endif %}
-                    </div>
 
-                    <div class="card full fade-in">
-                        <div class="card-kicker">
-                            Alert Notification
                         </div>
 
-                        <h2>Generated Deployment Order</h2>
-
-                        <textarea
-                            id="deploymentOrder"
-                            class="deployment-order-box"
-                            readonly
-                        >{{ result.deployment_order }}</textarea>
+                        <div class="hero-action-message">
+                            {{ result.action }}
+                        </div>
 
                         <button
                             type="button"
-                            class="secondary-btn"
+                            class="hero-copy-btn"
                             onclick="copyDeploymentOrder()"
                         >
                             Copy Deployment Order
                         </button>
+
                     </div>
 
-                    <div class="card full fade-in">
-                        <div class="card-kicker">
-                            Feedback Collection
+                    <div class="hero-map-panel">
+
+                        <div class="hero-map-topbar">
+                            <div>
+                                <span class="dot-live"></span>
+                                Impact Map
+                            </div>
+
+                            <div>
+                                {{ result.input.corridor }}
+                            </div>
                         </div>
 
-                        <h2>Post-event Feedback Capture</h2>
+                        <div id="heroMap"></div>
 
-                        <p class="muted">
-                            After the event is completed, officers can record what actually happened. These records are stored for audit, analysis, and future retraining. The model is not automatically retrained yet.
-                        </p>
+                        <div class="hero-map-overlay">
+                            <div>
+                                <span>Location</span>
+                                <strong>
+                                    {{ result.input.latitude }},
+                                    {{ result.input.longitude }}
+                                </strong>
+                            </div>
 
-                        <form
-                            method="post"
-                            action="{% url 'post_event_feedback' %}"
-                            class="feedback-form"
-                        >
-                            {% csrf_token %}
+                            <div>
+                                <span>Match</span>
+                                <strong>
+                                    {{ result.input.location_match.confidence }}
+                                </strong>
+                            </div>
+                        </div>
 
-                            <input type="hidden" name="event_type" value="{{ result.input.event_type }}">
-                            <input type="hidden" name="event_cause" value="{{ result.input.event_cause }}">
-                            <input type="hidden" name="priority" value="{{ result.input.priority }}">
+                    </div>
 
-                            <input type="hidden" name="latitude" value="{{ result.input.latitude }}">
-                            <input type="hidden" name="longitude" value="{{ result.input.longitude }}">
-                            <input type="hidden" name="corridor" value="{{ result.input.corridor }}">
+                </section>
 
-                            <input type="hidden" name="predicted_incidents" value="{{ result.forecast.predicted_incidents }}">
-                            <input type="hidden" name="predicted_duration_minutes" value="{{ result.final.duration_minutes }}">
-                            <input type="hidden" name="predicted_officers" value="{{ result.resources.officers }}">
-                            <input type="hidden" name="predicted_barricades" value="{{ result.resources.barricades }}">
-                            <input type="hidden" name="predicted_final_risk" value="{{ result.final.final_level }}">
+                <textarea
+                    id="deploymentOrder"
+                    class="hidden-deployment-order"
+                    readonly
+                >{{ result.deployment_order }}</textarea>
 
-                            <div class="feedback-grid">
-                                <div class="field">
-                                    <label>Actual duration minutes</label>
-                                    <input
-                                        type="number"
-                                        name="actual_duration_minutes"
-                                        min="0"
-                                        placeholder="Example: 95"
-                                        required
-                                    >
+                <div class="section-divider">
+                    <span>Detailed Technical Analysis</span>
+                </div>
+
+                <div class="results-container">
+
+                    <div class="cards">
+
+                        <div class="card highlight fade-in">
+                            <div class="card-kicker">
+                                ML Decision Layer
+                            </div>
+
+                            <h2>Traffic Impact Matrix</h2>
+
+                            <div class="kv">
+                                <span>Severity Level</span>
+                                <strong class="badge severity-{{ result.final.final_level|lower }}">
+                                    {{ result.final.final_level }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Estimated Duration</span>
+                                <strong class="mono">~{{ result.final.duration_minutes }} min</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Corridor Affected</span>
+                                <strong class="mono">{{ result.input.corridor }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Forecast Risk</span>
+                                <strong class="mono">{{ result.forecast.forecast_score|floatformat:1 }}%</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Forecast Source</span>
+                                <strong class="mono">
+                                    {{ result.forecast.forecast_source }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Event Impact</span>
+                                <strong class="mono">{{ result.event.event_score|floatformat:1 }}%</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Final Risk Score</span>
+                                <strong class="mono highlight-text">
+                                    {{ result.final.final_score|floatformat:1 }}%
+                                </strong>
+                            </div>
+
+                            <div class="risk-bars">
+                                <div>
+                                    <span>Forecast</span>
+                                    <div class="bar-track">
+                                        <div
+                                            class="bar-fill forecast"
+                                            style="width: {{ result.forecast.forecast_score|floatformat:0 }}%;"
+                                        ></div>
+                                    </div>
                                 </div>
 
-                                <div class="field">
-                                    <label>Actual officers deployed</label>
-                                    <input
-                                        type="number"
-                                        name="actual_officers_deployed"
-                                        min="0"
-                                        placeholder="Example: 6"
-                                        required
-                                    >
+                                <div>
+                                    <span>Event</span>
+                                    <div class="bar-track">
+                                        <div
+                                            class="bar-fill event"
+                                            style="width: {{ result.event.event_score|floatformat:0 }}%;"
+                                        ></div>
+                                    </div>
                                 </div>
 
-                                <div class="field">
-                                    <label>Actual barricades used</label>
-                                    <input
-                                        type="number"
-                                        name="actual_barricades_used"
-                                        min="0"
-                                        placeholder="Example: 3"
-                                        required
-                                    >
-                                </div>
-
-                                <div class="field">
-                                    <label>Actual road closure</label>
-                                    <select name="actual_road_closure">
-                                        <option value="no">No</option>
-                                        <option value="yes">Yes</option>
-                                    </select>
-                                </div>
-
-                                <div class="field">
-                                    <label>Actual incident count</label>
-                                    <input
-                                        type="number"
-                                        name="actual_incident_count"
-                                        min="0"
-                                        placeholder="Example: 2"
-                                    >
+                                <div>
+                                    <span>Final</span>
+                                    <div class="bar-track">
+                                        <div
+                                            class="bar-fill final"
+                                            style="width: {{ result.final.final_score|floatformat:0 }}%;"
+                                        ></div>
+                                    </div>
                                 </div>
                             </div>
 
-                            <div class="field">
-                                <label>Officer notes</label>
-                                <textarea
-                                    name="officer_notes"
-                                    rows="4"
-                                    placeholder="What happened on ground?"
-                                ></textarea>
+                            <p class="muted terminal-text">
+                                &gt; Forecast risk is based only on historical model prediction. Live event severity is added separately through EIS and final operational risk.
+                            </p>
+                        </div>
+
+                        <div class="card fade-in">
+                            <div class="card-kicker">
+                                Location Intelligence
                             </div>
+
+                            <h2>Coordinate Resolver</h2>
+
+                            <div class="kv">
+                                <span>Latitude</span>
+                                <strong class="mono">{{ result.input.latitude }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Longitude</span>
+                                <strong class="mono">{{ result.input.longitude }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Inferred Corridor</span>
+                                <strong class="mono">{{ result.input.corridor }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Match Method</span>
+                                <strong class="mono">{{ result.input.location_match.matched_by }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Nearest Police Station</span>
+                                <strong>
+                                    {{ result.input.police_station }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Station Match Method</span>
+                                <strong>
+                                    {{ result.input.police_station_match.matched_by }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Station Distance</span>
+                                <strong class="mono">
+                                    {% if result.input.police_station_match.distance_m %}
+                                        {{ result.input.police_station_match.distance_m|floatformat:0 }} m
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Station Match Confidence</span>
+                                <strong>
+                                    {{ result.input.police_station_match.confidence }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Match Distance</span>
+                                <strong class="mono">
+                                    {% if result.input.location_match.distance_m %}
+                                        {{ result.input.location_match.distance_m }}m
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Match Confidence</span>
+                                <strong class="mono">{{ result.input.location_match.confidence }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Spatial Cluster</span>
+                                <strong class="mono">{{ result.input.location_match.spatial_cluster_id }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Nearest Hotspot</span>
+                                <strong class="mono">
+                                    {% if result.input.location_match.nearest_hotspot_distance_m %}
+                                        {{ result.input.location_match.nearest_hotspot_distance_m }}m
+                                    {% else %}
+                                        —
+                                    {% endif %}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Spatial Density</span>
+                                <strong class="mono">{{ result.input.location_match.spatial_density_at_point }}</strong>
+                            </div>
+                        </div>
+
+                        <div class="card fade-in">
+                            <div class="card-kicker">
+                                Event Quantification
+                            </div>
+
+                            <h2>Composite EIS</h2>
+
+                            <div class="kv">
+                                <span>EIS Score</span>
+                                <strong class="mono">{{ result.eis.score|floatformat:1 }}%</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>EIS Level</span>
+                                <strong class="badge severity-{{ result.eis.level|lower }}">
+                                    {{ result.eis.level }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Event Impact</span>
+                                <strong class="mono">
+                                    {{ result.event.event_score|floatformat:1 }}%
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Crowd Size Used</span>
+                                <strong class="mono">
+                                    {{ result.event.crowd_size_used|default:"not_applicable" }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Crowd Multiplier</span>
+                                <strong class="mono">
+                                    {{ result.event.crowd_multiplier|floatformat:2 }}x
+                                </strong>
+                            </div>
+
+                        </div>
+
+                        {% if result.active_event_memory %}
+                        <div class="card">
+                            <div class="card-kicker">Live Memory Layer</div>
+
+                            <h2>
+                                Recent Event Influence
+                            </h2>
+
+                            <div class="kv">
+                                <span>Pressure Score</span>
+                                <strong>
+                                    {{ result.active_event_memory.pressure_score|floatformat:1 }}%
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Pressure Level</span>
+                                <strong>
+                                    {{ result.active_event_memory.pressure_level }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Relevant Recent Events</span>
+                                <strong>
+                                    {{ result.active_event_memory.recent_events_found }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Base Final Score</span>
+                                <strong>
+                                    {{ result.active_event_memory.base_final_score|floatformat:1 }}%
+                                </strong>
+                            </div>
+
+                            {% if result.active_event_memory.contributors %}
+                                <div class="terminal-header">
+                                    Top influence sources
+                                </div>
+
+                                <div class="memory-list">
+                                    {% for item in result.active_event_memory.contributors %}
+                                        <div class="memory-item">
+                                            <strong>
+                                                {{ item.event_cause }} — {{ item.corridor }}
+                                            </strong>
+
+                                            <span>
+                                                {{ item.age_hours }}h old · {{ item.distance_m|floatformat:0 }}m away · pressure {{ item.pressure|floatformat:1 }}
+                                            </span>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="muted">
+                                    No nearby recent event is currently influencing this prediction.
+                                </p>
+                            {% endif %}
+
+                            <p class="terminal-text">
+                                &gt; Recent events are weighted by recency, distance, corridor relation, spatial cluster, and severity.
+                            </p>
+                        </div>
+                        {% endif %}
+
+                        <div class="card full fade-in">
+                            <div class="card-kicker">
+                                Fallback Validation
+                            </div>
+
+                            <h2>Cluster Fallback Ablation Study</h2>
+
+                            {% if result.ablation.available %}
+                                <p class="model-headline">
+                                    {{ result.ablation.conclusion }}
+                                </p>
+
+                                <div class="ablation-grid">
+                                    <div class="ablation-card">
+                                        <span>Rows Tested</span>
+                                        <strong>{{ result.ablation.rows_tested }}</strong>
+                                    </div>
+
+                                    <div class="ablation-card">
+                                        <span>Corridor MAE</span>
+                                        <strong>{{ result.ablation.normal_profile.mae|floatformat:4 }}</strong>
+                                    </div>
+
+                                    <div class="ablation-card">
+                                        <span>Cluster MAE</span>
+                                        <strong>{{ result.ablation.cluster_fallback.mae|floatformat:4 }}</strong>
+                                    </div>
+
+                                    <div class="ablation-card">
+                                        <span>MAE Improvement</span>
+                                        <strong>
+                                            {{ result.ablation.comparison.mae_improvement_pct|floatformat:2 }}%
+                                        </strong>
+                                    </div>
+                                </div>
+
+                                <div class="comparison-table">
+                                    <div class="comparison-row comparison-head">
+                                        <span>Method</span>
+                                        <span>MAE</span>
+                                        <span>RMSE</span>
+                                        <span>R²</span>
+                                    </div>
+
+                                    <div class="comparison-row">
+                                        <span>{{ result.ablation.normal_profile.label }}</span>
+                                        <strong>{{ result.ablation.normal_profile.mae|floatformat:4 }}</strong>
+                                        <strong>{{ result.ablation.normal_profile.rmse|floatformat:4 }}</strong>
+                                        <strong>
+                                            {% if result.ablation.normal_profile.r2 is not None %}
+                                                {{ result.ablation.normal_profile.r2|floatformat:4 }}
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+
+                                    <div class="comparison-row">
+                                        <span>{{ result.ablation.cluster_fallback.label }}</span>
+                                        <strong>{{ result.ablation.cluster_fallback.mae|floatformat:4 }}</strong>
+                                        <strong>{{ result.ablation.cluster_fallback.rmse|floatformat:4 }}</strong>
+                                        <strong>
+                                            {% if result.ablation.cluster_fallback.r2 is not None %}
+                                                {{ result.ablation.cluster_fallback.r2|floatformat:4 }}
+                                            {% else %}
+                                                —
+                                            {% endif %}
+                                        </strong>
+                                    </div>
+                                </div>
+
+                                <div class="terminal-header">
+                                    Evidence note
+                                </div>
+
+                                <p class="muted terminal-text">
+                                    &gt; {{ result.ablation.note }}
+                                </p>
+
+                            {% else %}
+                                <p class="muted">
+                                    {{ result.ablation.message }}
+                                </p>
+
+                                <div class="terminal-text">
+                                    Run:
+                                    <br>
+                                    python run_cluster_ablation.py
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        <div class="card full fade-in">
+                            <div class="card-kicker">
+                                Operational Impact Comparison
+                            </div>
+
+                            <h2>Pre-event vs Post-event Baseline</h2>
+
+                            <div class="comparison-table">
+                                <div class="comparison-row comparison-head">
+                                    <span>Metric</span>
+                                    <span>Normal Condition</span>
+                                    <span>With Event</span>
+                                    <span>Delta</span>
+                                </div>
+
+                                <div class="comparison-row">
+                                    <span>Incident volume</span>
+
+                                    <strong>
+                                        {{ result.baseline.normal_baseline|floatformat:2 }}
+                                    </strong>
+
+                                    <strong>
+                                        {{ result.baseline.predicted_after_event|floatformat:2 }}
+                                    </strong>
+
+                                    <strong>
+                                        +{{ result.baseline.expected_delta|floatformat:2 }}
+                                    </strong>
+                                </div>
+
+                                <div class="comparison-row">
+                                    <span>Risk score</span>
+
+                                    <strong>
+                                        {{ result.baseline.normal_risk_score|floatformat:1 }}%
+                                    </strong>
+
+                                    <strong>
+                                        {{ result.baseline.with_event_risk_score|floatformat:1 }}%
+                                    </strong>
+
+                                    <strong>
+                                        +{{ result.baseline.risk_delta_points|floatformat:1 }}
+                                    </strong>
+                                </div>
+
+                                <div class="comparison-row">
+                                    <span>Operational state</span>
+                                    <strong>Baseline</strong>
+                                    <strong>{{ result.final.final_level }}</strong>
+                                    <strong style="line-height: 1.5; font-size: 12px; color: #cbd5e1;">
+                                        {{ result.action }}
+                                    </strong>
+                                </div>
+                            </div>
+
+                            <div class="terminal-text">
+                                Baseline source: {{ result.baseline.baseline_source }}
+                            </div>
+                        </div>
+
+                        <div class="card fade-in" style="animation-delay: 0.1s;">
+                            <div class="card-kicker">
+                                Deployment Layer
+                            </div>
+
+                            <h2>Resource Allocation</h2>
+
+                            <div class="kv">
+                                <span>Personnel Required</span>
+                                <strong class="mono">{{ result.resources.officers }} Officers</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Primary Station</span>
+                                <strong class="mono">{{ result.resources.station }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Shift Extension</span>
+                                <strong class="mono">{{ result.resources.shift_hours }}h</strong>
+                            </div>
+
+                            <ul class="task-list">
+                                <li><span>•</span> {{ result.resources.station }} — Primary traffic control</li>
+                                <li><span>•</span> {{ result.resources.station }} — Secondary monitoring</li>
+                                <li><span>•</span> {{ result.resources.station }} — Approach junction monitoring</li>
+                            </ul>
+                        </div>
+
+                        <div class="card fade-in" style="animation-delay: 0.2s;">
+                            <div class="card-kicker">
+                                Control Layer
+                            </div>
+
+                            <h2>Barricading Protocol</h2>
+
+                            <div class="kv">
+                                <span>Action Required</span>
+                                <strong>
+                                    {% if result.resources.barricades > 0 %}
+                                        <span class="badge required">Yes</span>
+                                    {% else %}
+                                        <span class="badge none">No</span>
+                                    {% endif %}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Units Needed</span>
+                                <strong class="mono">{{ result.resources.barricades }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Closure Probability</span>
+                                <strong class="mono">{{ result.final.closure_probability|floatformat:2 }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Primary Affected Area</span>
+                                <strong class="mono">{{ result.final.affected_radius_m }}m</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Secondary Monitoring Area</span>
+                                <strong class="mono">{{ result.final.secondary_radius_m }}m</strong>
+                            </div>
+                        </div>
+
+                        <div class="card fade-in" style="animation-delay: 0.3s;">
+                            <div class="card-kicker">
+                                Routing Layer
+                            </div>
+
+                            <h2>Diversion Routes</h2>
+
+                            <div class="kv">
+                                <span>Primary Detour</span>
+                                <strong class="mono">{{ result.diversion.primary_detour }}</strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Secondary Detour</span>
+                                <strong class="mono">{{ result.diversion.secondary_detour }}</strong>
+                            </div>
+
+                            <p class="muted terminal-text">
+                                &gt; {{ result.diversion.message }}
+                            </p>
+
+                            <div class="support-corridors">
+                                <span>Support Corridors:</span>
+
+                                <div class="tags">
+                                    {% for c in result.diversion.support_corridors %}
+                                        <span class="tag">{{ c }}</span>
+                                    {% empty %}
+                                        <span class="tag none">None</span>
+                                    {% endfor %}
+                                </div>
+                            </div>
+
+                            {% if result.diversion.candidate_evaluations %}
+                                <div class="terminal-header">
+                                    State-aware diversion ranking
+                                </div>
+
+                                <div class="diversion-state-table">
+                                    <div class="diversion-state-row diversion-state-head">
+                                        <span>Candidate</span>
+                                        <span>Route Risk</span>
+                                        <span>Pressure Score</span>
+                                        <span>Hist. Load</span>
+                                        <span>ML Incidents</span>
+                                        <span>Route</span>
+                                    </div>
+
+                                    {% for item in result.diversion.candidate_evaluations %}
+                                        <div class="diversion-state-row">
+                                            <strong>{{ item.corridor }}</strong>
+
+                                            <span class="badge severity-{{ item.forecast_level|lower }}">
+                                                {{ item.forecast_level }}
+                                            </span>
+
+                                            <strong class="mono">
+                                                {{ item.forecast_score|floatformat:1 }}%
+                                            </strong>
+
+                                            <strong class="mono">
+                                                {{ item.historical_load|floatformat:2 }}
+                                            </strong>
+
+                                            <strong class="mono">
+                                                {{ item.predicted_incidents|floatformat:2 }}
+                                            </strong>
+
+                                            <span>
+                                                {{ item.route_type }}
+                                            </span>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+
+                                <p class="muted terminal-text">
+                                    &gt; Diversion ranking uses route pressure score: historical load, alert probability, volatility, and ML incident forecast.
+                                </p>
+                            {% endif %}
+                        </div>
+
+                        <div class="card full fade-in">
+                            <div class="card-kicker">
+                                Historical Validation
+                            </div>
+
+                            <h2>Operational Model Performance</h2>
+
+                            <p class="model-headline">
+                                {{ result.operational_metrics.headline }}
+                            </p>
+
+                            <div class="ops-metric-grid">
+                                {% for card in result.operational_metrics.summary_cards %}
+                                    <div class="ops-metric-card">
+                                        <span>{{ card.title }}</span>
+                                        <strong>{{ card.value }}</strong>
+                                        <p>{{ card.description }}</p>
+                                    </div>
+                                {% endfor %}
+                            </div>
+
+                            <div class="terminal-header">
+                                Metric translation
+                            </div>
+
+                            <div class="metric-translation-table">
+                                <div class="metric-translation-row metric-translation-head">
+                                    <span>Metric</span>
+                                    <span>Raw Value</span>
+                                    <span>Operational Meaning</span>
+                                </div>
+
+                                {% for row in result.operational_metrics.explanation_rows %}
+                                    <div class="metric-translation-row">
+                                        <strong>{{ row.metric }}</strong>
+                                        <strong class="mono">{{ row.raw_value }}</strong>
+                                        <span>{{ row.operational_meaning }}</span>
+                                    </div>
+                                {% endfor %}
+                            </div>
+
+                            <p class="muted terminal-text">
+                                &gt; The alert classifier is the main decision layer. Exact incident-count regression is secondary because the data is sparse and zero-heavy.
+                            </p>
+                        </div>
+
+                        <div class="card fade-in">
+                            <div class="card-kicker">
+                                Model Uncertainty
+                            </div>
+
+                            <h2>{{ result.confidence.label }}</h2>
+
+                            <div class="kv">
+                                <span>Expected Incidents</span>
+                                <strong class="mono">
+                                    {{ result.confidence.expected|floatformat:2 }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Lower Estimate</span>
+                                <strong class="mono">
+                                    {{ result.confidence.lower|floatformat:2 }}
+                                </strong>
+                            </div>
+
+                            <div class="kv">
+                                <span>Upper Estimate</span>
+                                <strong class="mono">
+                                    {{ result.confidence.upper|floatformat:2 }}
+                                </strong>
+                            </div>
+
+                            <div class="terminal-header">
+                                Interpretation
+                            </div>
+
+                            <p class="muted terminal-text">
+                                &gt; {{ result.confidence.method }}.
+                                {% if result.confidence.type == "catboost_quantile" %}
+                                    This interval uses CatBoost lower and upper quantile regressors.
+                                    {% if result.confidence.coverage %}
+                                        Holdout coverage: {{ result.confidence.coverage|floatformat:3 }}.
+                                    {% endif %}
+                                {% else %}
+                                    This is a validation-error based estimate, not a guaranteed statistical interval.
+                                {% endif %}
+                            </p>
+                        </div>
+
+                        <div class="card full fade-in">
+                            <div class="card-kicker">
+                                Historical Grounding
+                            </div>
+
+                            <h2>Similar Past Events</h2>
+
+                            {% if result.similar_events %}
+                                <div class="similar-events">
+                                    {% for event in result.similar_events %}
+                                        <div class="similar-event-card">
+                                            <div class="similar-event-top">
+                                                <strong>{{ event.event_cause }}</strong>
+                                                <span>Score {{ event.similarity_score }}</span>
+                                            </div>
+
+                                            <div class="kv">
+                                                <span>Corridor</span>
+                                                <strong class="mono">{{ event.corridor }}</strong>
+                                            </div>
+
+                                            <div class="kv">
+                                                <span>Time</span>
+                                                <strong class="mono">{{ event.start_datetime }}</strong>
+                                            </div>
+
+                                            <div class="kv">
+                                                <span>Distance</span>
+                                                <strong class="mono">{{ event.distance_m }}m</strong>
+                                            </div>
+
+                                            <div class="kv">
+                                                <span>Duration</span>
+                                                <strong class="mono">{{ event.duration_minutes }} min</strong>
+                                            </div>
+
+                                            <div class="kv">
+                                                <span>Road Closure</span>
+                                                <strong class="mono">{{ event.road_closure }}</strong>
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <p class="muted terminal-text">
+                                    &gt; No similar historical events found.
+                                </p>
+                            {% endif %}
+                        </div>
+
+                        <div class="card full fade-in">
+                            <div class="card-kicker">
+                                Alert Notification
+                            </div>
+
+                            <h2>Generated Deployment Order</h2>
+
+                            <textarea
+                                id="deploymentOrder"
+                                class="deployment-order-box"
+                                readonly
+                            >{{ result.deployment_order }}</textarea>
 
                             <button
-                                type="submit"
-                                class="primary-btn"
+                                type="button"
+                                class="secondary-btn"
+                                onclick="copyDeploymentOrder()"
                             >
-                                Save Post-event Feedback
+                                Copy Deployment Order
                             </button>
-                        </form>
-                    </div>
-
-                    <div class="card full fade-in" style="animation-delay: 0.5s;">
-                        <div class="card-kicker">
-                            Final Recommendation
                         </div>
 
-                        <h2>Intelligence Recommendation</h2>
-
-                        <p class="recommendation-text">
-                            {{ result.action }}
-                        </p>
-
-                        <h3 class="terminal-header">
-                            &gt; Historical Context Variables
-                        </h3>
-
-                        <div class="history-grid">
-                            <div class="h-metric">
-                                <span>Profile</span>
-                                <strong class="mono">{{ result.history.profile_source }}</strong>
+                        <div class="card full fade-in">
+                            <div class="card-kicker">
+                                Feedback Collection
                             </div>
 
-                            <div class="h-metric">
-                                <span>Lag 1h</span>
-                                <strong class="mono">{{ result.history.lag_1|floatformat:2 }}</strong>
+                            <h2>Post-event Feedback Capture</h2>
+
+                            <p class="muted">
+                                After the event is completed, officers can record what actually happened. These records are stored for audit, analysis, and future retraining. The model is not automatically retrained yet.
+                            </p>
+
+                            <form
+                                method="post"
+                                action="{% url 'post_event_feedback' %}"
+                                class="feedback-form"
+                            >
+                                {% csrf_token %}
+
+                                <input type="hidden" name="event_type" value="{{ result.input.event_type }}">
+                                <input type="hidden" name="event_cause" value="{{ result.input.event_cause }}">
+                                <input type="hidden" name="priority" value="{{ result.input.priority }}">
+
+                                <input type="hidden" name="latitude" value="{{ result.input.latitude }}">
+                                <input type="hidden" name="longitude" value="{{ result.input.longitude }}">
+                                <input type="hidden" name="corridor" value="{{ result.input.corridor }}">
+
+                                <input type="hidden" name="predicted_incidents" value="{{ result.forecast.predicted_incidents }}">
+                                <input type="hidden" name="predicted_duration_minutes" value="{{ result.final.duration_minutes }}">
+                                <input type="hidden" name="predicted_officers" value="{{ result.resources.officers }}">
+                                <input type="hidden" name="predicted_barricades" value="{{ result.resources.barricades }}">
+                                <input type="hidden" name="predicted_final_risk" value="{{ result.final.final_level }}">
+
+                                <div class="feedback-grid">
+                                    <div class="field">
+                                        <label>Actual duration minutes</label>
+                                        <input
+                                            type="number"
+                                            name="actual_duration_minutes"
+                                            min="0"
+                                            placeholder="Example: 95"
+                                            required
+                                        >
+                                    </div>
+
+                                    <div class="field">
+                                        <label>Actual officers deployed</label>
+                                        <input
+                                            type="number"
+                                            name="actual_officers_deployed"
+                                            min="0"
+                                            placeholder="Example: 6"
+                                            required
+                                        >
+                                    </div>
+
+                                    <div class="field">
+                                        <label>Actual barricades used</label>
+                                        <input
+                                            type="number"
+                                            name="actual_barricades_used"
+                                            min="0"
+                                            placeholder="Example: 3"
+                                            required
+                                        >
+                                    </div>
+
+                                    <div class="field">
+                                        <label>Actual road closure</label>
+                                        <select name="actual_road_closure">
+                                            <option value="no">No</option>
+                                            <option value="yes">Yes</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="field">
+                                        <label>Actual incident count</label>
+                                        <input
+                                            type="number"
+                                            name="actual_incident_count"
+                                            min="0"
+                                            placeholder="Example: 2"
+                                        >
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <label>Officer notes</label>
+                                    <textarea
+                                        name="officer_notes"
+                                        rows="4"
+                                        placeholder="What happened on ground?"
+                                    ></textarea>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    class="primary-btn"
+                                >
+                                    Save Post-event Feedback
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="card full fade-in" style="animation-delay: 0.5s;">
+                            <div class="card-kicker">
+                                Final Recommendation
                             </div>
 
-                            <div class="h-metric">
-                                <span>Lag 24h</span>
-                                <strong class="mono">{{ result.history.lag_24|floatformat:2 }}</strong>
-                            </div>
+                            <h2>Intelligence Recommendation</h2>
 
-                            <div class="h-metric">
-                                <span>Rolling 6h</span>
-                                <strong class="mono">{{ result.history.rolling_6|floatformat:2 }}</strong>
-                            </div>
+                            <p class="recommendation-text">
+                                {{ result.action }}
+                            </p>
 
-                            <div class="h-metric">
-                                <span>Rolling 24h</span>
-                                <strong class="mono">{{ result.history.rolling_24|floatformat:2 }}</strong>
-                            </div>
+                            <h3 class="terminal-header">
+                                &gt; Historical Context Variables
+                            </h3>
 
-                            <div class="h-metric">
-                                <span>Corridor Avg</span>
-                                <strong class="mono">{{ result.history.corridor_avg|floatformat:2 }}</strong>
+                            <div class="history-grid">
+                                <div class="h-metric">
+                                    <span>Profile</span>
+                                    <strong class="mono">{{ result.history.profile_source }}</strong>
+                                </div>
+
+                                <div class="h-metric">
+                                    <span>Lag 1h</span>
+                                    <strong class="mono">{{ result.history.lag_1|floatformat:2 }}</strong>
+                                </div>
+
+                                <div class="h-metric">
+                                    <span>Lag 24h</span>
+                                    <strong class="mono">{{ result.history.lag_24|floatformat:2 }}</strong>
+                                </div>
+
+                                <div class="h-metric">
+                                    <span>Rolling 6h</span>
+                                    <strong class="mono">{{ result.history.rolling_6|floatformat:2 }}</strong>
+                                </div>
+
+                                <div class="h-metric">
+                                    <span>Rolling 24h</span>
+                                    <strong class="mono">{{ result.history.rolling_24|floatformat:2 }}</strong>
+                                </div>
+
+                                <div class="h-metric">
+                                    <span>Corridor Avg</span>
+                                    <strong class="mono">{{ result.history.corridor_avg|floatformat:2 }}</strong>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
+                    </div>
                 </div>
-            </div>
+            {% endif %}
         {% endif %}
 
     </div>
@@ -1478,7 +1627,7 @@
         }
     }
 
-    const hasResult = {% if result %}true{% else %}false{% endif %};
+    const hasResult = {% if result and not result.blocked %}true{% else %}false{% endif %};
 
     const defaultLat = parseFloat("{{ form.latitude|default:'12.9716' }}");
     const defaultLon = parseFloat("{{ form.longitude|default:'77.5946' }}");
@@ -1782,7 +1931,7 @@
     }
 </script>
 
-{% if result %}
+{% if result and not result.blocked %}
 <script>
     const heroLat = parseFloat("{{ result.map.latitude|default:'12.9716' }}");
     const heroLon = parseFloat("{{ result.map.longitude|default:'77.5946' }}");

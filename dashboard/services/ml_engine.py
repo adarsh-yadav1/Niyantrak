@@ -12,6 +12,10 @@ from src.forecasting.forecast_predictor import predict_single_forecast
 from src.forecasting.spatial_forecast_predictor import (
     predict_single_spatial_forecast
 )
+from src.inference.active_event_memory import (
+    get_active_event_pressure,
+    save_active_event,
+)
 
 from src.inference.location_resolver import (
     resolve_corridor_from_coordinates,
@@ -19,7 +23,6 @@ from src.inference.location_resolver import (
     is_bad_corridor_name,
 )
 
-# Added import
 from src.inference.police_station_resolver import (
     resolve_nearest_police_station,
     is_bad_station_name,
@@ -118,6 +121,7 @@ _MODEL_CACHE = None
 _SPATIAL_MODEL_CACHE = None
 _STORE_CACHE = None
 
+
 def build_calendar_event_context_from_payload(payload):
     event_type = (
         str(payload.get("event_type", "unplanned"))
@@ -168,10 +172,6 @@ def build_calendar_event_context_from_payload(payload):
         "election": "election",
     }
 
-    # ------------------------------------------------------------
-    # Resolve calendar event type
-    # ------------------------------------------------------------
-
     if explicit_calendar_type and explicit_calendar_type not in invalid_crowd_values:
         calendar_event_type = explicit_calendar_type
 
@@ -184,10 +184,6 @@ def build_calendar_event_context_from_payload(payload):
     else:
         calendar_event_type = "none"
 
-    # ------------------------------------------------------------
-    # If not a calendar/planned event, no event-day ML feature
-    # ------------------------------------------------------------
-
     if calendar_event_type == "none":
         return {
             "is_event_day": 0,
@@ -195,11 +191,6 @@ def build_calendar_event_context_from_payload(payload):
             "calendar_event_intensity": 0.0,
             "crowd_size_used_for_calendar": "not_applicable",
         }
-
-    # ------------------------------------------------------------
-    # Planned/crowd-bearing event intensity
-    # If crowd is unknown for planned events, use medium conservative.
-    # ------------------------------------------------------------
 
     if crowd_size in invalid_crowd_values:
         resolved_crowd_size = "medium"
@@ -214,6 +205,7 @@ def build_calendar_event_context_from_payload(payload):
         "protest": 85,
         "procession": 75,
         "political": 85,
+        "vip": 90,
         "election": 80,
         "construction": 55,
         "other": 45,
@@ -250,6 +242,7 @@ def build_calendar_event_context_from_payload(payload):
         "calendar_event_intensity": calendar_event_intensity,
         "crowd_size_used_for_calendar": resolved_crowd_size,
     }
+
 
 def parse_bool(value):
     value = str(value).strip().lower()
@@ -926,13 +919,8 @@ def calculate_adjusted_event_score(
     weather,
     event_cause="others"
 ):
-    priority_boost = get_priority_boost(
-        priority
-    )
-
-    event_type_boost = get_event_type_boost(
-        event_type
-    )
+    priority_boost = get_priority_boost(priority)
+    event_type_boost = get_event_type_boost(event_type)
 
     score = (
         safe_float(base_event_score)
@@ -960,11 +948,7 @@ def calculate_adjusted_event_score(
         weather_multiplier
     )
 
-    score = clamp(
-        score,
-        0,
-        100
-    )
+    score = clamp(score, 0, 100)
 
     return (
         score,
@@ -1719,8 +1703,12 @@ def predict_event_impact(payload):
     model = load_model()
     store = load_feature_store()
 
+    time_context = {
+        "event_datetime": payload.get("event_datetime")
+    }
+
     timestamp = normalize_timestamp(
-        payload.get("timestamp")
+        time_context.get("event_datetime")
     )
 
     hour = timestamp.hour
@@ -1757,7 +1745,6 @@ def predict_event_impact(payload):
         store=store
     )
 
-    # Added police station matching logic
     police_station_match = resolve_nearest_police_station(
         latitude=latitude,
         longitude=longitude,
@@ -1774,6 +1761,21 @@ def predict_event_impact(payload):
         location_match["corridor"],
         store
     )
+
+    user_police_station = payload.get(
+        "police_station",
+        ""
+    )
+
+    if is_bad_station_name(user_police_station):
+        police_station = police_station_match.get(
+            "police_station",
+            "Unknown"
+        )
+    else:
+        police_station = str(
+            user_police_station
+        ).strip()
 
     event_type = payload.get(
         "event_type",
@@ -1794,22 +1796,6 @@ def predict_event_impact(payload):
         "veh_type",
         "unknown"
     )
-
-    # Updated police station resolution logic
-    user_police_station = payload.get(
-        "police_station",
-        ""
-    )
-
-    if is_bad_station_name(user_police_station):
-        police_station = police_station_match.get(
-            "police_station",
-            "Unknown"
-        )
-    else:
-        police_station = str(
-            user_police_station
-        ).strip()
 
     crowd_size = payload.get(
         "crowd_size",
@@ -1970,6 +1956,36 @@ def predict_event_impact(payload):
         forecast_risk_score=forecast_score,
         event_impact_score=eis_score
     )
+
+    # ------------------------------------------------------------
+    # ACTIVE EVENT MEMORY
+    # ------------------------------------------------------------
+
+    active_event_pressure = get_active_event_pressure(
+        current_datetime=time_context.get("event_datetime"),
+        latitude=latitude,
+        longitude=longitude,
+        corridor=corridor,
+        spatial_cluster_id=location_match.get("spatial_cluster_id")
+    )
+
+    base_final_score = final_score
+
+    final_score = clamp(
+        final_score
+        +
+        active_event_pressure["pressure_score"] * 0.20,
+        0,
+        100
+    )
+
+    final_level = get_risk_level_from_score(
+        final_score
+    )
+
+    # ------------------------------------------------------------
+    # RESOURCE AND DIVERSION
+    # ------------------------------------------------------------
 
     officers, barricades = recommend_resources(
         final_risk_level=final_level,
@@ -2150,7 +2166,7 @@ def predict_event_impact(payload):
 
     ablation_results = load_ablation_results()
 
-    return {
+    result = {
         "input": {
             "event_type": event_type,
             "event_cause": event_cause,
@@ -2195,11 +2211,8 @@ def predict_event_impact(payload):
             "event_level": adjusted_event_level,
 
             "rush_hour": rush_hour,
-
-            "crowd_size_input": crowd_size,
             "crowd_size_used": resolved_crowd_size,
             "crowd_multiplier": crowd_multiplier,
-
             "weather_multiplier": weather_multiplier,
         },
 
@@ -2208,6 +2221,15 @@ def predict_event_impact(payload):
             "level": eis_level,
             "cause_risk_score": cause_risk_score,
             "weights": eis_weights,
+        },
+
+        "active_event_memory": {
+            "base_final_score": base_final_score,
+            "pressure_score": active_event_pressure["pressure_score"],
+            "pressure_level": active_event_pressure["pressure_level"],
+            "recent_events_found": active_event_pressure["recent_events_found"],
+            "contributors": active_event_pressure["contributors"],
+            "explanation": active_event_pressure["explanation"],
         },
 
         "baseline": {
@@ -2293,3 +2315,24 @@ def predict_event_impact(payload):
 
         "action": action,
     }
+
+    if not result.get("blocked"):
+        saved_event = save_active_event(
+            event_datetime=time_context.get("event_datetime"),
+            latitude=latitude,
+            longitude=longitude,
+            corridor=corridor,
+            spatial_cluster_id=location_match.get("spatial_cluster_id"),
+            event_type=event_type,
+            event_cause=event_cause,
+            priority=priority,
+            road_closure=road_closure,
+            event_score=adjusted_event_score,
+            final_score=final_score,
+            source="dashboard_prediction"
+        )
+
+        result["active_event_memory"]["current_event_saved"] = True
+        result["active_event_memory"]["current_event_id"] = saved_event["event_id"]
+
+    return result

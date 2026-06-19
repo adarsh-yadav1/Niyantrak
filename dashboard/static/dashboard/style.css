@@ -1821,3 +1821,32 @@ h2::before {
         grid-template-columns: 1fr;
     }
 }
+/* ============================================================
+   ACTIVE EVENT MEMORY
+============================================================ */
+
+.memory-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.memory-item {
+    padding: 13px 14px;
+    border-radius: 14px;
+    background: rgba(2, 6, 23, 0.48);
+    border: 1px solid rgba(34, 211, 238, 0.14);
+}
+
+.memory-item strong {
+    display: block;
+    color: #ffffff;
+    font-size: 13px;
+    margin-bottom: 5px;
+}
+
+.memory-item span {
+    display: block;
+    color: #94a3b8;
+    font-size: 12px;
+}
