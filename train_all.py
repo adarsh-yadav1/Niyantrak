@@ -4,6 +4,7 @@ import traceback
 
 
 import csv
+os.makedirs('data', exist_ok=True)
 
 # The data including the header and your specific rows
 data = [
