@@ -1,5 +1,3 @@
-import math
-
 import joblib
 import numpy as np
 import pandas as pd
@@ -35,6 +33,7 @@ SPATIAL_FEATURES = [
     "lag_48",
     "lag_72",
     "lag_168",
+
     "any_incident_last_3h",
     "incidents_last_24h",
     "above_corridor_avg",
@@ -53,6 +52,7 @@ SPATIAL_FEATURES = [
     "closure_risk",
     "cluster_risk",
 ]
+
 
 PROFILE_FEATURES = [
     "lag_1",
@@ -98,29 +98,112 @@ def safe_float(value, fallback=0.0):
 
 
 def normalize_datetime_utc_naive(series):
-    return (
-        pd.to_datetime(
-            series,
-            errors="coerce",
-            utc=True
-        )
-        .dt.tz_convert(None)
+    raw_series = series.copy()
+
+    parsed = pd.to_datetime(
+        raw_series,
+        errors="coerce",
+        utc=True
     )
 
-
-def clean_text(value):
-    return (
-        str(value or "UNKNOWN")
-        .strip()
+    failed_mask = (
+        parsed.isna()
+        &
+        raw_series.notna()
     )
+
+    if failed_mask.any():
+        try:
+            second_pass = pd.to_datetime(
+                raw_series.loc[failed_mask],
+                format="mixed",
+                errors="coerce",
+                utc=True
+            )
+
+        except Exception:
+            second_pass = pd.to_datetime(
+                raw_series.loc[failed_mask],
+                errors="coerce",
+                utc=True
+            )
+
+        parsed.loc[failed_mask] = second_pass
+
+    return parsed.dt.tz_convert(None)
+
+
+def ensure_column(df, col, default="UNKNOWN"):
+    if col not in df.columns:
+        df[col] = default
+
+    return df
 
 
 def prepare_raw_location_events(df):
     df = df.copy()
 
-    df["start_datetime"] = normalize_datetime_utc_naive(
-        df["start_datetime"]
+    ensure_column(
+        df,
+        "corridor",
+        "Non-corridor"
     )
+
+    ensure_column(
+        df,
+        "zone",
+        "UNKNOWN"
+    )
+
+    ensure_column(
+        df,
+        "junction",
+        "UNKNOWN"
+    )
+
+    ensure_column(
+        df,
+        "event_cause",
+        "others"
+    )
+
+    ensure_column(
+        df,
+        "requires_road_closure",
+        "False"
+    )
+
+    df["start_datetime_raw"] = df["start_datetime"].copy()
+
+    initial_parse = pd.to_datetime(
+        df["start_datetime_raw"],
+        errors="coerce",
+        utc=True
+    )
+
+    initial_failed = int(
+        initial_parse.isna().sum()
+    )
+
+    df["start_datetime"] = normalize_datetime_utc_naive(
+        df["start_datetime_raw"]
+    )
+
+    final_failed = int(
+        df["start_datetime"].isna().sum()
+    )
+
+    recovered = (
+        initial_failed
+        -
+        final_failed
+    )
+
+    print("\nSpatial Datetime Parse Recovery")
+    print("-" * 50)
+    print(f"Initially failed : {initial_failed}")
+    print(f"Recovered        : {recovered}")
+    print(f"Still failed     : {final_failed}")
 
     df["latitude"] = pd.to_numeric(
         df["latitude"],
@@ -137,11 +220,8 @@ def prepare_raw_location_events(df):
         "zone",
         "junction",
         "event_cause",
-        "requires_road_closure"
+        "requires_road_closure",
     ]:
-        if col not in df.columns:
-            df[col] = "UNKNOWN"
-
         df[col] = (
             df[col]
             .fillna("UNKNOWN")
@@ -153,11 +233,11 @@ def prepare_raw_location_events(df):
         subset=[
             "start_datetime",
             "latitude",
-            "longitude"
+            "longitude",
         ]
-    )
+    ).copy()
 
-    # Bengaluru coverage filter
+    # Bengaluru bounds
     df = df[
         (df["latitude"] >= 12.70)
         &
@@ -194,14 +274,16 @@ def assign_spatial_clusters(df, store):
         "longitude": df["longitude"].astype(float),
     })
 
-    df["spatial_cluster_id"] = model.predict(
-        input_df
-    ).astype(int)
+    df["spatial_cluster_id"] = (
+        model
+        .predict(input_df)
+        .astype(int)
+    )
 
     return df
 
 
-def get_cluster_centers(store):
+def get_cluster_centers(store, events=None):
     centers = store.get(
         "spatial_cluster_centers",
         {}
@@ -211,17 +293,42 @@ def get_cluster_centers(store):
 
     for cluster_id, center in centers.items():
         output[int(cluster_id)] = {
-            "latitude": safe_float(center.get("latitude")),
-            "longitude": safe_float(center.get("longitude")),
+            "latitude": safe_float(
+                center.get("latitude")
+            ),
+            "longitude": safe_float(
+                center.get("longitude")
+            ),
         }
+
+    if output:
+        return output
+
+    # fallback if centers are not stored
+    if events is not None and len(events) > 0:
+        grouped = (
+            events
+            .groupby("spatial_cluster_id")
+            .agg(
+                latitude=("latitude", "mean"),
+                longitude=("longitude", "mean"),
+            )
+            .reset_index()
+        )
+
+        for _, row in grouped.iterrows():
+            output[int(row["spatial_cluster_id"])] = {
+                "latitude": safe_float(row["latitude"]),
+                "longitude": safe_float(row["longitude"]),
+            }
 
     return output
 
 
-def get_dominant_corridor_map(df):
+def get_dominant_corridor_map(events):
     dominant = {}
 
-    for cluster_id, group in df.groupby("spatial_cluster_id"):
+    for cluster_id, group in events.groupby("spatial_cluster_id"):
         corridors = (
             group["corridor"]
             .fillna("UNKNOWN")
@@ -237,12 +344,20 @@ def get_dominant_corridor_map(df):
             dominant[int(cluster_id)] = "Non-corridor"
 
         else:
-            dominant[int(cluster_id)] = corridors.mode().iloc[0]
+            dominant[int(cluster_id)] = (
+                corridors
+                .mode()
+                .iloc[0]
+            )
 
     return dominant
 
 
-def get_nearest_corridor_distance_map(store, centers, dominant_corridor_map):
+def get_nearest_corridor_distance_map(
+    store,
+    centers,
+    dominant_corridor_map
+):
     corridor_profiles = store.get(
         "corridor_location_profiles",
         {}
@@ -274,7 +389,10 @@ def get_nearest_corridor_distance_map(store, centers, dominant_corridor_map):
     return output
 
 
-def get_nearest_hotspot_distance_map(store, centers):
+def get_nearest_hotspot_distance_map(
+    store,
+    centers
+):
     hotspots = store.get(
         "hotspot_points",
         []
@@ -309,13 +427,14 @@ def get_nearest_hotspot_distance_map(store, centers):
     return output
 
 
-def build_static_cluster_features(df, store):
+def build_static_cluster_features(events, store):
     centers = get_cluster_centers(
-        store
+        store,
+        events
     )
 
     dominant_corridor_map = get_dominant_corridor_map(
-        df
+        events
     )
 
     nearest_corridor_distance_map = get_nearest_corridor_distance_map(
@@ -330,7 +449,8 @@ def build_static_cluster_features(df, store):
     )
 
     cluster_event_count = (
-        df.groupby("spatial_cluster_id")
+        events
+        .groupby("spatial_cluster_id")
         .size()
     )
 
@@ -340,61 +460,55 @@ def build_static_cluster_features(df, store):
     )
 
     zone_counts = (
-        df.groupby("zone")
-        .size()
+        events["zone"]
+        .value_counts()
     )
 
     junction_counts = (
-        df.groupby("junction")
-        .size()
+        events["junction"]
+        .value_counts()
     )
 
     cause_counts = (
-        df.groupby("event_cause")
-        .size()
+        events["event_cause"]
+        .value_counts()
     )
 
     closure_counts = (
-        df.groupby("requires_road_closure")
-        .size()
+        events["requires_road_closure"]
+        .value_counts()
     )
 
-    df["zone_risk_raw"] = (
-        df["zone"]
+    events["zone_risk_raw"] = (
+        events["zone"]
         .map(zone_counts)
         .fillna(0)
     )
 
-    df["junction_risk_raw"] = (
-        df["junction"]
+    events["junction_risk_raw"] = (
+        events["junction"]
         .map(junction_counts)
         .fillna(0)
     )
 
-    df["cause_risk_raw"] = (
-        df["event_cause"]
+    events["cause_risk_raw"] = (
+        events["event_cause"]
         .map(cause_counts)
         .fillna(0)
     )
 
-    df["closure_risk_raw"] = (
-        df["requires_road_closure"]
+    events["closure_risk_raw"] = (
+        events["requires_road_closure"]
         .map(closure_counts)
         .fillna(0)
     )
 
     static_rows = []
 
-    all_cluster_ids = sorted(
-        list(centers.keys())
-    )
-
-    for cluster_id in all_cluster_ids:
-        group = df[
-            df["spatial_cluster_id"] == cluster_id
+    for cluster_id, center in centers.items():
+        group = events[
+            events["spatial_cluster_id"] == cluster_id
         ]
-
-        center = centers[cluster_id]
 
         if len(group) == 0:
             zone_risk = 0.0
@@ -444,6 +558,7 @@ def build_static_cluster_features(df, store):
         static_rows
     )
 
+
 def add_lag_and_rolling_features(spatial_ts):
     spatial_ts = spatial_ts.sort_values(
         [
@@ -476,7 +591,7 @@ def add_lag_and_rolling_features(spatial_ts):
 
     # ------------------------------------------------
     # Rolling features
-    # Use shifted values to avoid leakage from current hour
+    # shifted to avoid leakage
     # ------------------------------------------------
 
     shifted_incidents = grouped.shift(1)
@@ -524,7 +639,7 @@ def add_lag_and_rolling_features(spatial_ts):
     )
 
     # ------------------------------------------------
-    # Fill base lag / rolling columns first
+    # Fill base features one by one
     # ------------------------------------------------
 
     base_numeric_features = [
@@ -561,7 +676,7 @@ def add_lag_and_rolling_features(spatial_ts):
         ).fillna(0.0)
 
     # ------------------------------------------------
-    # New compressed lag-signal features
+    # Compressed lag-signal features
     # ------------------------------------------------
 
     spatial_ts["any_incident_last_3h"] = (
@@ -601,8 +716,6 @@ def add_lag_and_rolling_features(spatial_ts):
 
     # ------------------------------------------------
     # Final safe fill
-    # Do not use spatial_ts[PROFILE_FEATURES] = ...
-    # because duplicate/mismatched columns can crash pandas.
     # ------------------------------------------------
 
     for col in PROFILE_FEATURES:
@@ -626,6 +739,11 @@ def build_spatial_timeseries_dataset(df, store):
         df
     )
 
+    if len(events) == 0:
+        raise ValueError(
+            "No valid Bengaluru location events available for spatial model."
+        )
+
     events = assign_spatial_clusters(
         events,
         store
@@ -637,7 +755,8 @@ def build_spatial_timeseries_dataset(df, store):
     )
 
     centers = get_cluster_centers(
-        store
+        store,
+        events
     )
 
     all_clusters = sorted(
@@ -730,16 +849,18 @@ def build_spatial_timeseries_dataset(df, store):
     ]
 
     print("\nSpatial Dataset Shape:")
-    print(spatial_ts.shape)
+    print(
+        spatial_ts.shape
+    )
 
-    print("\nTarget Distribution:")
+    print("\nSpatial Target Distribution:")
     print(
         spatial_ts["incident_count"]
         .value_counts()
         .head(15)
     )
 
-    print("\nZero Ratio:")
+    print("\nSpatial Zero Ratio:")
     print(
         round(
             (spatial_ts["incident_count"] == 0).mean(),

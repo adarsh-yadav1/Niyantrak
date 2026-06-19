@@ -12,7 +12,7 @@ The Event Impact Score uses a weighted combination of forecast risk, live event 
 
 Best method: **Forecast stronger**
 
-Best MAE against proxy severity: **10.7044**
+Best MAE against proxy severity: **9.9332**
 
 ## Target Definition
 
@@ -22,12 +22,12 @@ Actual severity proxy = 45% duration score + 25% same corridor-hour incident vol
 
 | Method | Forecast | Event | Cause | MAE |
 |---|---:|---:|---:|---:|
-| Forecast stronger | 0.35 | 0.5 | 0.15 | 10.7044 |
-| Forecast-heavy | 0.4 | 0.45 | 0.15 | 10.7876 |
-| Balanced default | 0.3 | 0.55 | 0.15 | 11.0601 |
-| Event stronger | 0.25 | 0.6 | 0.15 | 11.7738 |
-| Cause stronger | 0.3 | 0.5 | 0.2 | 12.1973 |
-| Event-dominant | 0.2 | 0.65 | 0.15 | 12.5881 |
+| Forecast stronger | 0.35 | 0.5 | 0.15 | 9.9332 |
+| Forecast-heavy | 0.4 | 0.45 | 0.15 | 10.1241 |
+| Balanced default | 0.3 | 0.55 | 0.15 | 10.1269 |
+| Event stronger | 0.25 | 0.6 | 0.15 | 10.7433 |
+| Cause stronger | 0.3 | 0.5 | 0.2 | 11.0385 |
+| Event-dominant | 0.2 | 0.65 | 0.15 | 11.4654 |
 
 ## Honesty Note
 

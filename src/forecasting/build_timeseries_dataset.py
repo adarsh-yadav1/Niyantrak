@@ -1,31 +1,254 @@
 import numpy as np
 import pandas as pd
-from sklearn.cluster import DBSCAN
 
 
-def normalize_datetime_utc_naive(series):
+FEATURES = [
+    "corridor",
 
+    "hour",
+    "weekday",
+    "month",
+
+    "hour_sin",
+    "hour_cos",
+
+    "lag_1",
+    "lag_2",
+    "lag_3",
+    "lag_24",
+    "lag_48",
+    "lag_72",
+    "lag_168",
+
+    "any_incident_last_3h",
+    "incidents_last_24h",
+    "above_corridor_avg",
+
+    "rolling_6",
+    "rolling_12",
+    "rolling_24",
+    "rolling_168",
+
+    "corridor_avg",
+    "corridor_volatility",
+
+    "zone_risk",
+    "junction_risk",
+    "cause_risk",
+    "closure_risk",
+    "cluster_risk",
+]
+
+
+PROFILE_FEATURES = [
+    "lag_1",
+    "lag_2",
+    "lag_3",
+    "lag_24",
+    "lag_48",
+    "lag_72",
+    "lag_168",
+
+    "any_incident_last_3h",
+    "incidents_last_24h",
+    "above_corridor_avg",
+
+    "rolling_6",
+    "rolling_12",
+    "rolling_24",
+    "rolling_168",
+
+    "corridor_avg",
+    "corridor_volatility",
+
+    "zone_risk",
+    "junction_risk",
+    "cause_risk",
+    "closure_risk",
+    "cluster_risk",
+]
+
+
+def parse_datetime_robust(series):
+    """
+    Robust datetime parser.
+
+    First pass:
+        normal pd.to_datetime(..., utc=True)
+
+    Second pass:
+        format='mixed' for rows that failed.
+
+    Returns timezone-naive UTC timestamps.
+    """
+
+    raw_series = series.copy()
+
+    first_pass = pd.to_datetime(
+        raw_series,
+        errors="coerce",
+        utc=True
+    )
+
+    failed_mask = (
+        first_pass.isna()
+        &
+        raw_series.notna()
+    )
+
+    if failed_mask.any():
+        try:
+            second_pass = pd.to_datetime(
+                raw_series.loc[failed_mask],
+                format="mixed",
+                errors="coerce",
+                utc=True
+            )
+
+        except Exception:
+            second_pass = pd.to_datetime(
+                raw_series.loc[failed_mask],
+                errors="coerce",
+                utc=True
+            )
+
+        first_pass.loc[failed_mask] = second_pass
+
+    return first_pass.dt.tz_convert(None)
+
+
+def clean_text(value):
     return (
-        pd.to_datetime(
-            series,
-            errors="coerce",
-            utc=True
-        )
-        .dt.tz_convert(None)
+        str(value or "UNKNOWN")
+        .strip()
     )
 
 
-def add_derived_lag_features(ts_df):
-    required_cols = [
+def safe_numeric(series, fallback=0.0):
+    return (
+        pd.to_numeric(
+            series,
+            errors="coerce"
+        )
+        .fillna(fallback)
+    )
+
+
+def ensure_column(df, col, default="UNKNOWN"):
+    if col not in df.columns:
+        df[col] = default
+
+    return df
+
+
+def add_lag_and_rolling_features(ts_df):
+    ts_df = ts_df.sort_values(
+        [
+            "corridor",
+            "time_bucket"
+        ]
+    ).copy()
+
+    grouped = ts_df.groupby(
+        "corridor"
+    )["incident_count"]
+
+    # ------------------------------------------------
+    # Lag features
+    # ------------------------------------------------
+
+    for lag in [
+        1,
+        2,
+        3,
+        24,
+        48,
+        72,
+        168
+    ]:
+        ts_df[f"lag_{lag}"] = (
+            grouped
+            .shift(lag)
+        )
+
+    # ------------------------------------------------
+    # Rolling features
+    # shifted to avoid current-hour leakage
+    # ------------------------------------------------
+
+    shifted = grouped.shift(1)
+
+    for window in [
+        6,
+        12,
+        24,
+        168
+    ]:
+        ts_df[f"rolling_{window}"] = (
+            shifted
+            .groupby(ts_df["corridor"])
+            .rolling(window)
+            .mean()
+            .reset_index(level=0, drop=True)
+        )
+
+    # ------------------------------------------------
+    # Corridor average / volatility
+    # ------------------------------------------------
+
+    corridor_avg = (
+        ts_df
+        .groupby("corridor")["incident_count"]
+        .mean()
+    )
+
+    corridor_std = (
+        ts_df
+        .groupby("corridor")["incident_count"]
+        .std()
+    )
+
+    ts_df["corridor_avg"] = (
+        ts_df["corridor"]
+        .map(corridor_avg)
+        .fillna(0)
+    )
+
+    ts_df["corridor_volatility"] = (
+        ts_df["corridor"]
+        .map(corridor_std)
+        .fillna(0)
+    )
+
+    # ------------------------------------------------
+    # Safe fill base features
+    # ------------------------------------------------
+
+    base_features = [
         "lag_1",
         "lag_2",
         "lag_3",
+        "lag_24",
+        "lag_48",
+        "lag_72",
+        "lag_168",
+
         "rolling_6",
+        "rolling_12",
         "rolling_24",
+        "rolling_168",
+
         "corridor_avg",
+        "corridor_volatility",
+
+        "zone_risk",
+        "junction_risk",
+        "cause_risk",
+        "closure_risk",
+        "cluster_risk",
     ]
 
-    for col in required_cols:
+    for col in base_features:
         if col not in ts_df.columns:
             ts_df[col] = 0.0
 
@@ -33,6 +256,10 @@ def add_derived_lag_features(ts_df):
             ts_df[col],
             errors="coerce"
         ).fillna(0.0)
+
+    # ------------------------------------------------
+    # New compressed lag-signal features
+    # ------------------------------------------------
 
     ts_df["any_incident_last_3h"] = (
         (
@@ -53,7 +280,13 @@ def add_derived_lag_features(ts_df):
 
     ts_df["incidents_last_24h"] = (
         ts_df["incidents_last_24h"]
-        .replace([float("inf"), -float("inf")], 0)
+        .replace(
+            [
+                float("inf"),
+                -float("inf")
+            ],
+            0
+        )
         .fillna(0)
     )
 
@@ -63,189 +296,217 @@ def add_derived_lag_features(ts_df):
         ts_df["corridor_avg"]
     ).astype(int)
 
+    # ------------------------------------------------
+    # Final safe fill
+    # ------------------------------------------------
+
+    for col in PROFILE_FEATURES:
+        if col not in ts_df.columns:
+            ts_df[col] = 0.0
+
+        ts_df[col] = pd.to_numeric(
+            ts_df[col],
+            errors="coerce"
+        ).fillna(0.0)
+
     return ts_df
 
 
+def build_static_corridor_features(df):
+    df = df.copy()
+
+    zone_counts = (
+        df["zone"]
+        .value_counts()
+    )
+
+    junction_counts = (
+        df["junction"]
+        .value_counts()
+    )
+
+    cause_counts = (
+        df["event_cause"]
+        .value_counts()
+    )
+
+    closure_counts = (
+        df["requires_road_closure"]
+        .value_counts()
+    )
+
+    cluster_counts = (
+        df["corridor"]
+        .value_counts()
+    )
+
+    df["zone_risk_raw"] = (
+        df["zone"]
+        .map(zone_counts)
+        .fillna(0)
+    )
+
+    df["junction_risk_raw"] = (
+        df["junction"]
+        .map(junction_counts)
+        .fillna(0)
+    )
+
+    df["cause_risk_raw"] = (
+        df["event_cause"]
+        .map(cause_counts)
+        .fillna(0)
+    )
+
+    df["closure_risk_raw"] = (
+        df["requires_road_closure"]
+        .map(closure_counts)
+        .fillna(0)
+    )
+
+    df["cluster_risk_raw"] = (
+        df["corridor"]
+        .map(cluster_counts)
+        .fillna(0)
+    )
+
+    static_features = (
+        df
+        .groupby("corridor")
+        .agg(
+            zone_risk=("zone_risk_raw", "mean"),
+            junction_risk=("junction_risk_raw", "mean"),
+            cause_risk=("cause_risk_raw", "mean"),
+            closure_risk=("closure_risk_raw", "mean"),
+            cluster_risk=("cluster_risk_raw", "mean"),
+        )
+        .reset_index()
+    )
+
+    return static_features
+
+
 def build_timeseries_dataset(df):
-
-    print("\nBuilding Advanced Time Series Dataset...")
-
-    # ====================================================
-    # DATETIME CLEANING
-    # ====================================================
+    print("\n" + "=" * 70)
+    print("BUILDING CORRIDOR-HOUR TIME-SERIES DATASET")
+    print("=" * 70)
 
     df = df.copy()
 
-    df["start_datetime"] = normalize_datetime_utc_naive(
-        df["start_datetime"]
+    # ==================================================
+    # Required columns
+    # ==================================================
+
+    required_defaults = {
+        "corridor": "Non-corridor",
+        "zone": "UNKNOWN",
+        "junction": "UNKNOWN",
+        "event_cause": "others",
+        "requires_road_closure": "False",
+    }
+
+    for col, default in required_defaults.items():
+        ensure_column(
+            df,
+            col,
+            default
+        )
+
+    # ==================================================
+    # Robust datetime parsing
+    # ==================================================
+
+    df["start_datetime_raw"] = df["start_datetime"].copy()
+
+    initial_parse = pd.to_datetime(
+        df["start_datetime_raw"],
+        errors="coerce",
+        utc=True
     )
+
+    initial_failed = int(
+        initial_parse.isna().sum()
+    )
+
+    df["start_datetime"] = parse_datetime_robust(
+        df["start_datetime_raw"]
+    )
+
+    final_failed = int(
+        df["start_datetime"].isna().sum()
+    )
+
+    recovered = (
+        initial_failed
+        -
+        final_failed
+    )
+
+    print("\nDatetime Parse Recovery")
+    print("-" * 50)
+    print(f"Initially failed : {initial_failed}")
+    print(f"Recovered        : {recovered}")
+    print(f"Still failed     : {final_failed}")
 
     df = df.dropna(
-        subset=["start_datetime"]
-    )
+        subset=[
+            "start_datetime"
+        ]
+    ).copy()
 
-    # ====================================================
-    # BASIC CLEANING
-    # ====================================================
+    # ==================================================
+    # Clean categorical columns
+    # ==================================================
+
+    for col in [
+        "corridor",
+        "zone",
+        "junction",
+        "event_cause",
+        "requires_road_closure",
+    ]:
+        df[col] = (
+            df[col]
+            .fillna("UNKNOWN")
+            .astype(str)
+            .str.strip()
+        )
 
     df["corridor"] = (
         df["corridor"]
-        .fillna("UNKNOWN")
-        .astype(str)
+        .replace(
+            {
+                "": "Non-corridor",
+                "nan": "Non-corridor",
+                "None": "Non-corridor",
+            }
+        )
     )
 
-    df["zone"] = (
-        df["zone"]
-        .fillna("UNKNOWN")
-        .astype(str)
-    )
-
-    df["junction"] = (
-        df["junction"]
-        .fillna("UNKNOWN")
-        .astype(str)
-    )
-
-    df["event_cause"] = (
-        df["event_cause"]
-        .fillna("UNKNOWN")
-        .astype(str)
-        .str.lower()
-        .str.strip()
-    )
-
-    df["requires_road_closure"] = (
-        df["requires_road_closure"]
-        .fillna(False)
-        .astype(bool)
-    )
-
-    df["latitude"] = pd.to_numeric(
-        df["latitude"],
-        errors="coerce"
-    )
-
-    df["longitude"] = pd.to_numeric(
-        df["longitude"],
-        errors="coerce"
-    )
-
-    df["latitude"] = df["latitude"].fillna(
-        df["latitude"].median()
-    )
-
-    df["longitude"] = df["longitude"].fillna(
-        df["longitude"].median()
-    )
-
-    # ====================================================
-    # TIME BUCKET
-    # ====================================================
+    # ==================================================
+    # Build hourly buckets
+    # ==================================================
 
     df["time_bucket"] = (
         df["start_datetime"]
         .dt.floor("h")
     )
 
-    # ====================================================
-    # SPATIAL CLUSTERING
-    # ====================================================
+    min_time = df["time_bucket"].min()
+    max_time = df["time_bucket"].max()
 
-    coords = df[
-        ["latitude", "longitude"]
-    ].values
-
-    clustering = DBSCAN(
-        eps=0.005,
-        min_samples=10
+    corridors = sorted(
+        df["corridor"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
     )
 
-    df["cluster_id"] = clustering.fit_predict(
-        coords
-    )
-
-    # ====================================================
-    # RAW RISK MAPS
-    # ====================================================
-
-    zone_risk = (
-        df.groupby("zone")
-        .size()
-    )
-
-    junction_risk = (
-        df.groupby("junction")
-        .size()
-    )
-
-    cause_risk = (
-        df.groupby("event_cause")
-        .size()
-    )
-
-    closure_risk = (
-        df.groupby("requires_road_closure")
-        .size()
-    )
-
-    cluster_risk = (
-        df.groupby("cluster_id")
-        .size()
-    )
-
-    df["zone_risk"] = (
-        df["zone"]
-        .map(zone_risk)
-        .fillna(0)
-    )
-
-    df["junction_risk"] = (
-        df["junction"]
-        .map(junction_risk)
-        .fillna(0)
-    )
-
-    df["cause_risk"] = (
-        df["event_cause"]
-        .map(cause_risk)
-        .fillna(0)
-    )
-
-    df["closure_risk"] = (
-        df["requires_road_closure"]
-        .map(closure_risk)
-        .fillna(0)
-    )
-
-    df["cluster_risk"] = (
-        df["cluster_id"]
-        .map(cluster_risk)
-        .fillna(0)
-    )
-
-    # ====================================================
-    # INCIDENT COUNT PER CORRIDOR-HOUR
-    # ====================================================
-
-    hourly = (
-        df.groupby(
-            [
-                "corridor",
-                "time_bucket"
-            ]
-        )
-        .size()
-        .reset_index(name="incident_count")
-    )
-
-    # ====================================================
-    # COMPLETE CORRIDOR-HOUR GRID
-    # This ensures missing hours become 0 incidents.
-    # Very important for correct lag/rolling features.
-    # ====================================================
-
-    min_time = hourly["time_bucket"].min()
-    max_time = hourly["time_bucket"].max()
+    if not corridors:
+        corridors = [
+            "Non-corridor"
+        ]
 
     all_hours = pd.date_range(
         start=min_time,
@@ -253,96 +514,90 @@ def build_timeseries_dataset(df):
         freq="h"
     )
 
-    corridors = sorted(
-        hourly["corridor"].unique()
-    )
-
-    grid_parts = []
-
-    for corridor in corridors:
-
-        temp = pd.DataFrame({
-            "time_bucket": all_hours
-        })
-
-        temp["corridor"] = corridor
-
-        grid_parts.append(temp)
-
-    full_grid = pd.concat(
-        grid_parts,
-        ignore_index=True
-    )
-
-    ts_df = full_grid.merge(
-        hourly,
-        on=[
-            "corridor",
-            "time_bucket"
+    full_index = pd.MultiIndex.from_product(
+        [
+            all_hours,
+            corridors
         ],
-        how="left"
+        names=[
+            "time_bucket",
+            "corridor"
+        ]
     )
 
-    ts_df["incident_count"] = (
-        ts_df["incident_count"]
-        .fillna(0)
-        .astype(float)
-    )
+    # ==================================================
+    # Aggregate target
+    # ==================================================
 
-    # ====================================================
-    # CORRIDOR-LEVEL SPATIAL FEATURES
-    # ====================================================
-
-    spatial_features = (
-        df.groupby("corridor")
-        .agg(
-            zone_risk=("zone_risk", "mean"),
-            junction_risk=("junction_risk", "mean"),
-            cause_risk=("cause_risk", "mean"),
-            closure_risk=("closure_risk", "mean"),
-            cluster_risk=("cluster_risk", "mean")
+    event_counts = (
+        df
+        .groupby(
+            [
+                "time_bucket",
+                "corridor"
+            ]
         )
-        .reset_index()
+        .size()
+        .reindex(
+            full_index,
+            fill_value=0
+        )
+        .reset_index(name="incident_count")
+    )
+
+    ts_df = event_counts.copy()
+
+    # ==================================================
+    # Add static corridor risk features
+    # ==================================================
+
+    static_features = build_static_corridor_features(
+        df
     )
 
     ts_df = ts_df.merge(
-        spatial_features,
+        static_features,
         on="corridor",
         how="left"
     )
 
-    spatial_cols = [
+    risk_cols = [
         "zone_risk",
         "junction_risk",
         "cause_risk",
         "closure_risk",
-        "cluster_risk"
+        "cluster_risk",
     ]
 
-    for col in spatial_cols:
-
+    for col in risk_cols:
         ts_df[col] = (
-            ts_df[col]
-            .fillna(ts_df[col].median())
+            pd.to_numeric(
+                ts_df[col],
+                errors="coerce"
+            )
+            .fillna(0)
         )
 
-    # ====================================================
-    # TIME FEATURES
-    # ====================================================
+    # ==================================================
+    # Time features
+    # ==================================================
 
     ts_df["hour"] = (
         ts_df["time_bucket"]
         .dt.hour
+        .astype(int)
     )
 
     ts_df["weekday"] = (
         ts_df["time_bucket"]
         .dt.weekday
+        .astype(int)
     )
 
     ts_df["month"] = (
         ts_df["time_bucket"]
         .dt.month
+        .astype(int)
     )
 
     ts_df["hour_sin"] = np.sin(
@@ -353,134 +608,54 @@ def build_timeseries_dataset(df):
         2 * np.pi * ts_df["hour"] / 24
     )
 
-    # ====================================================
-    # SORT BEFORE LAGS
-    # ====================================================
+    # ==================================================
+    # Lag, rolling, and derived lag features
+    # ==================================================
 
-    ts_df = ts_df.sort_values(
+    ts_df = add_lag_and_rolling_features(
+        ts_df
+    )
+
+    # ==================================================
+    # Final column order
+    # ==================================================
+
+    for col in FEATURES:
+        if col not in ts_df.columns:
+            ts_df[col] = 0
+
+    ts_df = ts_df[
         [
-            "corridor",
-            "time_bucket"
+            "time_bucket",
+            "incident_count"
         ]
-    ).reset_index(drop=True)
+        +
+        FEATURES
+    ]
 
-    # ====================================================
-    # CORRIDOR-SPECIFIC LAGS
-    # IMPORTANT: Never use global shift here.
-    # ====================================================
-
-    group = ts_df.groupby("corridor")["incident_count"]
-
-    ts_df["lag_1"] = group.shift(1)
-    ts_df["lag_2"] = group.shift(2)
-    ts_df["lag_3"] = group.shift(3)
-
-    ts_df["lag_24"] = group.shift(24)
-    ts_df["lag_48"] = group.shift(48)
-    ts_df["lag_72"] = group.shift(72)
-    ts_df["lag_168"] = group.shift(168)
-
-    # ====================================================
-    # CORRIDOR-SPECIFIC ROLLING WINDOWS
-    # Shift first to avoid using current target in rolling.
-    # ====================================================
-
-    shifted = (
-        ts_df.groupby("corridor")["incident_count"]
-        .shift(1)
+    print("\nFinal Time-Series Dataset Shape:")
+    print(
+        ts_df.shape
     )
 
-    ts_df["rolling_6"] = (
-        shifted
-        .groupby(ts_df["corridor"])
-        .rolling(6)
-        .mean()
-        .reset_index(level=0, drop=True)
-    )
-
-    ts_df["rolling_12"] = (
-        shifted
-        .groupby(ts_df["corridor"])
-        .rolling(12)
-        .mean()
-        .reset_index(level=0, drop=True)
-    )
-
-    ts_df["rolling_24"] = (
-        shifted
-        .groupby(ts_df["corridor"])
-        .rolling(24)
-        .mean()
-        .reset_index(level=0, drop=True)
-    )
-
-    ts_df["rolling_168"] = (
-        shifted
-        .groupby(ts_df["corridor"])
-        .rolling(168)
-        .mean()
-        .reset_index(level=0, drop=True)
-    )
-
-    # ====================================================
-    # CORRIDOR STATS
-    # Computed on full grid, so zero-incident hours matter.
-    # ====================================================
-
-    corridor_avg = (
-        ts_df.groupby("corridor")["incident_count"]
-        .mean()
-    )
-
-    corridor_std = (
-        ts_df.groupby("corridor")["incident_count"]
-        .std()
-    )
-
-    ts_df["corridor_avg"] = (
-        ts_df["corridor"]
-        .map(corridor_avg)
-        .fillna(0)
-    )
-
-    ts_df["corridor_volatility"] = (
-        ts_df["corridor"]
-        .map(corridor_std)
-        .fillna(0)
-    )
-    ts_df = add_derived_lag_features(ts_df)
-    # ====================================================
-    # DROP NA FROM LAGS / ROLLINGS
-    # ====================================================
-
-    ts_df = ts_df.dropna().reset_index(drop=True)
-
-    # ====================================================
-    # DEBUG OUTPUT
-    # ====================================================
-
-    print("\nDataset Shape:")
-    print(ts_df.shape)
-
-    print("\nIncident Count Stats:")
-    print(ts_df["incident_count"].describe())
-
-    print("\nTop Incident Counts:")
+    print("\nTarget Distribution:")
     print(
         ts_df["incident_count"]
         .value_counts()
-        .head(10)
+        .head(15)
     )
 
-    print("\nTop Corridors By Rows:")
+    print("\nZero Ratio:")
     print(
-        ts_df.groupby("corridor")
-        .size()
-        .sort_values(ascending=False)
-        .head(20)
+        round(
+            (ts_df["incident_count"] == 0).mean(),
+            4
+        )
     )
 
-    print("\nColumns:")
-    print(ts_df.columns.tolist())
+    print("\nFeatures:")
+    print(
+        FEATURES
+    )
 
     return ts_df
