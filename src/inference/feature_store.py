@@ -7,6 +7,9 @@ from sklearn.cluster import KMeans
 from src.preprocessing.load_data import load_data
 from src.forecasting.build_timeseries_dataset import build_timeseries_dataset
 
+from src.inference.police_station_resolver import (
+    build_police_station_store,
+)
 
 FEATURES = [
     "corridor",
@@ -836,6 +839,13 @@ def build_feature_store(
             list(corridor_profiles.keys())
         ),
     }
+    police_station_store = build_police_station_store(
+        df
+    )
+
+    store.update(
+        police_station_store
+    )
 
     store.update(
         location_store

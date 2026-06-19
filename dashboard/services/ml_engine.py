@@ -19,6 +19,12 @@ from src.inference.location_resolver import (
     is_bad_corridor_name,
 )
 
+# Added import
+from src.inference.police_station_resolver import (
+    resolve_nearest_police_station,
+    is_bad_station_name,
+)
+
 from src.inference.similar_events import find_similar_events
 
 from src.scoring.event_impact import calculate_event_impact
@@ -208,7 +214,6 @@ def build_calendar_event_context_from_payload(payload):
         "protest": 85,
         "procession": 75,
         "political": 85,
-        "vip": 90,
         "election": 80,
         "construction": 55,
         "other": 45,
@@ -1752,6 +1757,13 @@ def predict_event_impact(payload):
         store=store
     )
 
+    # Added police station matching logic
+    police_station_match = resolve_nearest_police_station(
+        latitude=latitude,
+        longitude=longitude,
+        store=store
+    )
+
     if location_match.get("outside_bengaluru"):
         raise ValueError(
             "Selected location is outside Bengaluru coverage area. "
@@ -1783,10 +1795,21 @@ def predict_event_impact(payload):
         "unknown"
     )
 
-    police_station = payload.get(
+    # Updated police station resolution logic
+    user_police_station = payload.get(
         "police_station",
-        "Unknown"
+        ""
     )
+
+    if is_bad_station_name(user_police_station):
+        police_station = police_station_match.get(
+            "police_station",
+            "Unknown"
+        )
+    else:
+        police_station = str(
+            user_police_station
+        ).strip()
 
     crowd_size = payload.get(
         "crowd_size",
@@ -2136,6 +2159,7 @@ def predict_event_impact(payload):
             "corridor": corridor,
             "veh_type": veh_type,
             "police_station": police_station,
+            "police_station_match": police_station_match,
 
             "timestamp": timestamp,
             "hour": hour,

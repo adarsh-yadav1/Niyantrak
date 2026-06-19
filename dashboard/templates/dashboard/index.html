@@ -666,6 +666,38 @@
                         </div>
 
                         <div class="kv">
+                            <span>Nearest Police Station</span>
+                            <strong>
+                                {{ result.input.police_station }}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Station Match Method</span>
+                            <strong>
+                                {{ result.input.police_station_match.matched_by }}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Station Distance</span>
+                            <strong class="mono">
+                                {% if result.input.police_station_match.distance_m %}
+                                    {{ result.input.police_station_match.distance_m|floatformat:0 }} m
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
+                            <span>Station Match Confidence</span>
+                            <strong>
+                                {{ result.input.police_station_match.confidence }}
+                            </strong>
+                        </div>
+
+                        <div class="kv">
                             <span>Match Distance</span>
                             <strong class="mono">
                                 {% if result.input.location_match.distance_m %}
