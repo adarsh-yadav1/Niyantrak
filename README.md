@@ -275,7 +275,7 @@ Useful for a quick CLI-based prediction without starting the web dashboard.
 Event: public event, mega crowd (60,000+), no road closure
 Location: near Mysore Road, evening rush hour
 ```
-![alt text](image-1.png)
+![alt text](images/image-1.png)
 Returns a HIGH-level EIS driven primarily by crowd size and rush-hour timing, with officer/barricade counts and a primary diversion route.
  
 ---
@@ -289,7 +289,8 @@ Location: Shivaji Nagar, 09:12
  
 Even if the historical forecast risk for that corridor-hour is LOW, the final operational risk escalates to HIGH because of the live event severity — see [Operational Outputs](docs/operational-outputs.md#final-operational-risk).
 
-![alt text](image-2.png)
+![alt text](images/image-2.png)
+
 ---
  
 ### ✅ Out-of-coverage coordinate
@@ -297,7 +298,7 @@ Even if the historical forecast risk for that corridor-hour is LOW, the final op
 ```
 Latitude: 28.6139, Longitude: 77.2090   (Delhi, not Bengaluru)
 ```
-![alt text](image.png)
+![alt text](images/image.png)
 The system rejects the input rather than force-matching it to a corridor:
  
 ```
