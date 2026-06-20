@@ -121,7 +121,6 @@ _MODEL_CACHE = None
 _SPATIAL_MODEL_CACHE = None
 _STORE_CACHE = None
 
-
 def build_calendar_event_context_from_payload(payload):
     event_type = (
         str(payload.get("event_type", "unplanned"))
@@ -151,7 +150,7 @@ def build_calendar_event_context_from_payload(payload):
         .replace("-", "_")
     )
 
-    invalid_crowd_values = {
+    invalid_values = {
         "",
         "unknown",
         "none",
@@ -172,7 +171,11 @@ def build_calendar_event_context_from_payload(payload):
         "election": "election",
     }
 
-    if explicit_calendar_type and explicit_calendar_type not in invalid_crowd_values:
+    # ------------------------------------------------------------
+    # Resolve calendar event type
+    # ------------------------------------------------------------
+
+    if explicit_calendar_type and explicit_calendar_type not in invalid_values:
         calendar_event_type = explicit_calendar_type
 
     elif event_cause in planned_causes:
@@ -184,15 +187,23 @@ def build_calendar_event_context_from_payload(payload):
     else:
         calendar_event_type = "none"
 
+    # ------------------------------------------------------------
+    # No calendar event feature for normal unplanned events
+    # ------------------------------------------------------------
+
     if calendar_event_type == "none":
         return {
             "is_event_day": 0,
             "calendar_event_type": "none",
             "calendar_event_intensity": 0.0,
-            "crowd_size_used_for_calendar": "not_applicable",
+            "crowd_size_used_for_calendar": "none",
         }
 
-    if crowd_size in invalid_crowd_values:
+    # ------------------------------------------------------------
+    # Calendar event intensity
+    # ------------------------------------------------------------
+
+    if crowd_size in invalid_values:
         resolved_crowd_size = "medium"
     else:
         resolved_crowd_size = crowd_size
@@ -833,16 +844,21 @@ def get_crowd_multiplier(
     event_cause="others"
 ):
     """
-    Crowd size should only affect planned / crowd-bearing events.
+    Crowd size can affect both planned and unplanned events.
 
-    For unplanned events, crowd is usually unknown and should not boost risk.
+    Example:
+    - accident near stadium crowd
+    - breakdown near festival area
+    - congestion near protest dispersal
+
+    But if crowd is unknown for unplanned events, keep it neutral.
     """
 
-    if not is_crowd_relevant_event(
-        event_type,
-        event_cause
-    ):
-        return 1.00, "not_applicable"
+    event_type = (
+        str(event_type or "unplanned")
+        .strip()
+        .lower()
+    )
 
     crowd_size = (
         str(crowd_size or "unknown")
@@ -850,14 +866,22 @@ def get_crowd_multiplier(
         .lower()
     )
 
-    if crowd_size in [
+    invalid_values = {
         "",
         "unknown",
         "none",
         "nan",
         "null",
-    ]:
-        # Conservative default only for planned events.
+        "not_applicable",
+        "na",
+    }
+
+    # If unplanned and crowd is unknown, do not boost risk.
+    if event_type == "unplanned" and crowd_size in invalid_values:
+        return 1.00, "unknown"
+
+    # If planned and crowd is unknown, use conservative medium default.
+    if event_type == "planned" and crowd_size in invalid_values:
         crowd_size = "medium"
 
     multipliers = {
@@ -868,7 +892,7 @@ def get_crowd_multiplier(
     }
 
     return (
-        multipliers.get(crowd_size, 1.08),
+        multipliers.get(crowd_size, 1.00),
         crowd_size
     )
 
@@ -910,7 +934,6 @@ def get_event_type_boost(event_type):
         str(event_type).strip().lower(),
         4
     )
-
 def calculate_adjusted_event_score(
     base_event_score,
     priority,
@@ -919,8 +942,13 @@ def calculate_adjusted_event_score(
     weather,
     event_cause="others"
 ):
-    priority_boost = get_priority_boost(priority)
-    event_type_boost = get_event_type_boost(event_type)
+    priority_boost = get_priority_boost(
+        priority
+    )
+
+    event_type_boost = get_event_type_boost(
+        event_type
+    )
 
     score = (
         safe_float(base_event_score)
@@ -948,7 +976,11 @@ def calculate_adjusted_event_score(
         weather_multiplier
     )
 
-    score = clamp(score, 0, 100)
+    score = clamp(
+        score,
+        0,
+        100
+    )
 
     return (
         score,
