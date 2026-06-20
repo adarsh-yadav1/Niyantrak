@@ -3,6 +3,9 @@ import pandas as pd
 from src.features.event_calender import (
     add_event_calendar_features_to_corridor_timeseries,
 )
+from src.features.feedback_training import (
+    apply_feedback_to_timeseries_counts,
+)
 
 FEATURES = [
     "corridor",
@@ -551,6 +554,10 @@ def build_timeseries_dataset(df):
     )
 
     ts_df = event_counts.copy()
+
+    ts_df = apply_feedback_to_timeseries_counts(
+        ts_df
+    )
 
     # ==================================================
     # Add static corridor risk features
