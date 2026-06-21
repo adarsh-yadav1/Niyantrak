@@ -24,6 +24,8 @@ This logic prevents under-response to serious live events just because a corrido
 
 ## Resource Recommendation
 
+File: `dashboard/services/ml_engine.py` (`recommend_resources`)
+
 The system recommends officers and barricades based on the final risk level.
 
 Base logic:
@@ -41,11 +43,13 @@ Additional resources are added on top of this base for:
 - high predicted incidents
 - critical final risk
 
+> **Note:** a separate function with the same name (`recommend_resources`) exists in `src/recommendation/resource_recommender.py`, with different logic (keyed by raw predicted incident volume rather than risk level). That file is **not** called by the dashboard — the table above reflects the actual logic in `dashboard/services/ml_engine.py`, which is what the live system uses.
+
 ## Diversion Recommendation
 
 File: `src/routing/diversion_engine.py`
 
-The diversion engine uses a graph of corridors, where each corridor is a node and edges represent possible route alternatives.
+The diversion engine uses a graph of corridors, where each corridor is a node and edges represent possible route alternatives. Candidate routes are found via shortest-path traversal up to two hops out from the affected corridor (`get_candidate_corridors`).
 
 Output fields:
 
@@ -65,7 +69,18 @@ Secondary detour  : Old Airport Road
 Support corridors : Varthur Road, CBD 2, Mysore Road
 ```
 
-> This is corridor-level routing based on a predefined graph, not live road-network routing — see [Limitations & Roadmap](limitations-and-roadmap.md).
+## State-Aware Diversion Ranking
+
+Beyond the static corridor graph, each candidate diversion route is additionally scored live using:
+
+- historical load for that corridor
+- alert probability (from the forecasting layer)
+- volatility
+- ML-forecasted incident count
+
+This produces a ranked table (visible on the dashboard) showing each candidate's risk tier (LOW / MODERATE / HIGH), pressure score, historical load, ML-forecasted incidents, and route type (`direct` for one-hop candidates, `secondary` for two-hop candidates). The recommended primary and secondary detour are chosen using this live risk data layered on top of the static graph — not graph structure alone.
+
+> This combines a predefined corridor graph with live risk scoring; it is not live, dynamically-routed road-network routing — see [Limitations & Roadmap](limitations-and-roadmap.md).
 
 ## Affected Radius Calculation
 

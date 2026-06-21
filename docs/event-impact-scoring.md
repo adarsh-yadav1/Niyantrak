@@ -25,6 +25,8 @@ This captures the immediate operational severity of the event itself, independen
 
 ## Crowd Size Adjustment
 
+File: `dashboard/services/ml_engine.py` (`get_crowd_multiplier`) — also duplicated in `src/inference/predict_traffic_risk.py` for the CLI predictor.
+
 User input categories:
 
 | Category | Range |
@@ -45,7 +47,11 @@ Multipliers:
 
 Crowd size matters most for public events, rallies, processions, festivals, sports events, and protests — the same event type with a mega crowd should produce a higher impact than the same event type with a small crowd.
 
+> **Note:** these multiplier functions currently exist in two places with identical values (`ml_engine.py` for the dashboard, `predict_traffic_risk.py` for the CLI predictor). This is not a correctness issue today, but if either copy is tuned independently in the future, the dashboard and CLI predictor could silently diverge — worth consolidating into a single shared module.
+
 ## Weather Adjustment
+
+File: `dashboard/services/ml_engine.py` (`get_weather_multiplier`) — also duplicated in `src/inference/predict_traffic_risk.py`.
 
 User input categories:
 
@@ -85,6 +91,16 @@ EIS =
   + event_weight × adjusted_event_score
   + cause_weight × cause_risk_score
 ```
+
+Default weights (before any EIS calibration overrides), defined in `dashboard/services/ml_engine.py`:
+
+| Weight | Default Value |
+|---|---|
+| `forecast_weight` | 0.30 |
+| `event_weight` | 0.55 |
+| `cause_weight` | 0.15 |
+
+These are normalized to sum to 1.0 before being applied, so calibration can adjust the balance without ever producing an out-of-range EIS score.
 
 EIS levels:
 

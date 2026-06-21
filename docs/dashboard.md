@@ -1,6 +1,6 @@
 # Dashboard
 
-The dashboard is built with Django, with templates under `dashboard/templates/dashboard/` (or `traffic_web/`, depending on which app name is current — see [Architecture](architecture.md#project-structure)) and styling in `dashboard/static/dashboard/style.css`. Core ML/business logic for the dashboard lives in `dashboard/services/ml_engine.py` and `dashboard/services/feedback_store.py`.
+The dashboard is built with Django: the `traffic_web/` package holds the project-level settings, URLs, and WSGI/ASGI entry points, while the `dashboard/` app holds the actual page. Templates live under `dashboard/templates/dashboard/`, styling in `dashboard/static/dashboard/style.css`, and the core ML/business logic for the dashboard lives in `dashboard/services/ml_engine.py` and `dashboard/services/feedback_store.py`.
 
 ## What the Dashboard Shows
 
@@ -15,6 +15,7 @@ Deployment order
 Model metrics in operational language
 R² explanation panel
 Location intelligence
+State-aware diversion ranking
 Pre-event vs post-event comparison
 80% prediction interval
 Cluster fallback ablation result
@@ -87,8 +88,12 @@ The dashboard surfaces model metrics and evidence directly, rather than hiding t
 - cluster fallback ablation result (see [Location Intelligence](location-intelligence.md#cluster-fallback-ablation-study))
 - EIS weight calibration evidence (see [Event Impact Scoring](event-impact-scoring.md#eis-weight-micro-calibration))
 
+## Historical Context Variables
+
+The dashboard's "Historical Context Variables" panel (lag, rolling, and corridor-average values) is computed from the trained coordinate-aware feature store, refreshed whenever `train_all.py` or `scripts/prepare_feature_store.py` is re-run — it is not recalculated live from a streaming database on every request. This is an intentional design choice for a corridor-history feature, not a limitation specific to this panel; see [Feedback & Retraining](feedback-and-retraining.md) for how this could evolve toward more frequent refresh cycles.
+
 ## Related Docs
 
-- [Operational Outputs](operational-outputs.md) — the deployment order and resource plan shown on the dashboard
+- [Operational Outputs](operational-outputs.md) — the deployment order, resource plan, and diversion ranking shown on the dashboard
 - [Feedback & Retraining](feedback-and-retraining.md) — the feedback form shown on the dashboard
 - [Judge / Reviewer Notes](judge-notes.md) — talking points for walking a reviewer through the dashboard

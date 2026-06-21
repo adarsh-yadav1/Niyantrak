@@ -4,7 +4,7 @@ This is the layer that makes the system **coordinate-first**: it turns a raw lat
 
 ## Coordinate-Aware Feature Store
 
-File: `src/inference/feature_store.py`
+File: `src/inference/feature_store.py` (`build_location_and_cluster_store`, `build_feature_store`)
 
 At prediction time, the user only provides:
 
@@ -30,6 +30,7 @@ junction risk
 cause risk
 closure risk
 cluster risk
+calendar-aware event context
 ```
 
 The feature store bridges this gap by holding precomputed historical values, keyed by location and time, so they can be looked up instantly instead of recomputed from raw history on every request.
@@ -50,7 +51,7 @@ spatial_cluster_profiles
 risk thresholds
 ```
 
-This store is built as part of the full training pipeline (`train_all.py`) and can also be built independently via `prepare_feature_store.py`.
+This store is built as part of the full training pipeline (`train_all.py`) and can also be built independently via `scripts/prepare_feature_store.py`.
 
 ## Location Resolver
 
@@ -74,6 +75,7 @@ It performs:
 
 - coordinate validation
 - Bengaluru boundary validation
+- restricted-zone validation (`src/inference/location_validity_guard.py`)
 - nearest real corridor matching
 - nearest corridor centroid matching
 - nearest spatial cluster lookup
@@ -91,7 +93,26 @@ Please choose a location within Bengaluru.
 
 This prevents fake or meaningless corridor matching for out-of-city coordinates.
 
-## KMeans Spatial Cluster Fallback
+## Restricted-Zone Validation
+
+File: `src/inference/location_validity_guard.py`
+
+In addition to the city-wide boundary check above, coordinates are checked against a separate list of restricted zones (loaded from `data/restricted_zones.csv` when present). This lets specific no-go or sensitive areas be flagged distinctly from a simple "outside Bengaluru" rejection, without requiring those areas to be hard-coded into the boundary check itself.
+
+## Location Resolution Tiers
+
+The location resolver returns one of six match states, in order of specificity, using the first one available:
+
+| Order | `matched_by` value | Meaning |
+|---|---|---|
+| 1 | `nearest real corridor historical point` | A real historical event point is close to the input coordinates |
+| 2 | `nearest real corridor centroid` | No close point, but a known corridor's centroid is close |
+| 3 | `nearest real corridor inside spatial cluster` | No close corridor, but the surrounding spatial cluster has one |
+| 4 | `spatial cluster fallback; no reliable corridor label` | Nothing corridor-specific is close enough; cluster-level profile is used |
+| — | `outside Bengaluru boundary` | Coordinates fall outside the validated coverage area — rejected, not matched |
+| — | `invalid coordinates fallback` | Coordinates are malformed or unparseable — rejected, not matched |
+
+Each successful tier (1–4) carries a `confidence` value (HIGH / MEDIUM / LOW) that the dashboard surfaces directly in the "Coordinate Resolver" panel, so a weak match is never presented with false certainty.
 
 ### Why It's Needed
 
@@ -121,18 +142,6 @@ use cluster-hour historical profile
 prediction still has meaningful history
 ```
 
-### Fallback Order
-
-The system walks through fallback levels in order of specificity, using the first one available:
-
-1. exact inferred corridor-hour profile
-2. nearest inferred corridor-hour profile
-3. inferred corridor-level profile
-4. spatial cluster-hour profile
-5. nearest spatial cluster-hour profile
-6. spatial cluster-level profile
-7. global fallback profile
-
 ## Cluster Fallback Ablation Study
 
 File: `src/evaluation/cluster_fallback_ablation.py`
@@ -154,12 +163,12 @@ MAE Delta         : -0.0848
 Improvement       : -55.18%
 ```
 
-**Conclusion:** cluster fallback is weaker than corridor-hour history when corridor matching is reliable. It is therefore **not** used as a replacement for corridor history — it is used only when corridor matching is weak or unavailable (fallback levels 4–7 above). This makes the fallback design evidence-based rather than assumed.
+**Conclusion:** cluster fallback is weaker than corridor-hour history when corridor matching is reliable. It is therefore **not** used as a replacement for corridor history — it is used only when corridor matching is weak or unavailable (tier 4 above). This makes the fallback design evidence-based rather than assumed.
 
 Output: `models/cluster_fallback_ablation.json`
 
 ## Related Docs
 
 - [Data & Features](data-and-features.md) — what the feature store actually stores
-- [Forecasting Model](forecasting-model.md) — how resolved features feed the model
+- [Forecasting Model](forecasting-model.md) — how resolved features feed the model, and how confidence level determines which tier is used
 - [Judge / Reviewer Notes](judge-notes.md) — how to explain the fallback honestly

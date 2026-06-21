@@ -4,9 +4,20 @@
 
 The corridor-hour dataset has `incident_count = 0` for more than 90% of rows (see [Data & Features](data-and-features.md#zero-heavy-target-distribution)). A standard regressor trained on this data tends to collapse toward predicting near-zero values everywhere and misses the rare traffic spikes that actually matter operationally.
 
+## Two Forecasting Tiers
+
+Niyantrak trains this hurdle architecture **twice**, producing two independent model bundles:
+
+| Tier | File | Trained by | Role |
+|---|---|---|---|
+| Primary | `models/spatial_timeseries_forecast_model.pkl` | `src/forecasting/train_spatial_timeseries_model.py` | Point-aware spatial-cluster model — used when location-resolution confidence is high |
+| Fallback | `models/timeseries_forecast_model.pkl` | `src/forecasting/train_timeseries_model.py` | Corridor-hour model — used when spatial confidence is low |
+
+Both tiers share the same two-stage (classifier + regressor) hurdle structure described below; they differ in which spatial granularity their training data is aggregated at. The dashboard's "Forecast Source" field reports which tier produced a given prediction — for example, `"primary spatial-cluster-hour model"` or `"corridor-hour fallback model"`.
+
 ## Model Architecture: Zero-Inflated CatBoost Hurdle Model
 
-The forecasting model has two stages:
+Each tier's forecasting model has two stages:
 
 ```text
 Stage 1: CatBoostClassifier  (alert classifier)
@@ -15,7 +26,7 @@ Stage 2: CatBoostRegressor   (positive-count regressor)
 
 ### Stage 1 — Alert Classifier
 
-Predicts whether a corridor-hour will have any incident at all.
+Predicts whether a corridor-hour (or spatial-cluster-hour, for the primary tier) will have any incident at all.
 
 - **Target:** `alert_target = 1 if incident_count > 0 else 0`
 - **Output:** `alert_probability`
@@ -42,7 +53,7 @@ if alert probability is high:
 
 This two-stage structure performs better on sparse traffic data than a single end-to-end regressor.
 
-Training is implemented in `src/forecasting/train_timeseries_model.py`, using the corridor-hour dataset built by `build_timeseries_dataset.py` and validated via `cross_validate_timeseries.py`.
+Training for the **fallback tier** is implemented in `src/forecasting/train_timeseries_model.py`, using the corridor-hour dataset built by `build_timeseries_dataset.py` and validated via `cross_validate_timeseries.py`. The **primary spatial tier** follows the same two-stage structure in `train_spatial_timeseries_model.py`, using the spatial-cluster-hour dataset built by `build_spatial_timeseries_dataset.py`.
 
 ## Prediction Interval (Quantile Models)
 
@@ -133,5 +144,5 @@ Forecast risk is purely historical/model-based. If forecast risk is zero, it mea
 ## Related Docs
 
 - [Data & Features](data-and-features.md) — the inputs to this model
-- [Location Intelligence](location-intelligence.md) — how features are supplied at prediction time
+- [Location Intelligence](location-intelligence.md) — how features are supplied at prediction time, and how the system chooses which tier to use
 - [Event Impact Scoring](event-impact-scoring.md) — how forecast risk combines with live event severity
