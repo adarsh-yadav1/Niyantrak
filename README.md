@@ -205,75 +205,120 @@ NIYANTRAK/
 ---
  
 ## Setup
- 
+
 ### Prerequisites
- 
+
 - Python 3.10+
 - pip
+
 ---
- 
+
 ### Step 1 — Clone the repository
- 
+
 ```bash
 git clone https://github.com/adarsh-yadav1/Niyantrak.git
 cd Niyantrak
+```
 
+---
+
+### Step 2 — Create and activate a virtual environment
+
+```bash
 # Create virtual environment
 python -m venv venv
 
 # Activate virtual environment (Windows)
 venv\Scripts\activate
 
-# For Linux/macOS:
+# Activate virtual environment (Linux/macOS)
 source venv/bin/activate
 ```
- 
+
 ---
- 
-### Step 2 — Install dependencies
- 
+
+### Step 3 — Install dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
- 
-> **Windows users:** `requirements.txt` includes Jupyter-related packages (`jupyter_server_terminals`, `terminado`) that depend on `pywinpty`. On Windows, `pywinpty` sometimes fails to resolve automatically through the bulk `requirements.txt` install and needs to be installed explicitly. If you hit an error related to `pywinpty` during or after Step 2, run:
+
+> **Windows users:** `requirements.txt` includes Jupyter-related packages (`jupyter_server_terminals`, `terminado`) that depend on `pywinpty`. On Windows, `pywinpty` sometimes fails to resolve automatically through the bulk `requirements.txt` install and needs to be installed explicitly. If you hit an error related to `pywinpty` during or after this step, run:
 >
 > ```bash
 > pip install pywinpty==3.0.3
 > ```
 >
 > Then re-run `pip install -r requirements.txt` to pick up anything that failed to install before `pywinpty` was resolved. This step is **not needed on macOS or Linux** — `pywinpty` is a Windows-only package and pip will simply skip it on other platforms.
- 
+
 ---
- 
-### Step 3 — Run the training pipeline
- 
+
+### Step 4 — Set environment variables
+
+```bash
+# Windows (Command Prompt)
+set DEBUG=True
+set DJANGO_SETTINGS_MODULE=traffic_web.settings
+
+# Windows (PowerShell)
+$env:DEBUG="True"
+$env:DJANGO_SETTINGS_MODULE="traffic_web.settings"
+
+# Linux/macOS
+export DEBUG=True
+export DJANGO_SETTINGS_MODULE=traffic_web.settings
+```
+
+`DEBUG=True` is for local development only — it shows full error pages if something breaks. Never set this in production.
+
+---
+
+### Step 5 — Run the training pipeline
+
 ```bash
 python train_all.py
 ```
- 
+
 This loads the data, builds the corridor-hour and spatial-cluster time-series datasets, trains the zero-inflated CatBoost hurdle models (both the primary spatial model and the corridor-hour fallback), builds the coordinate-aware feature store, runs the cluster fallback ablation, trains the quantile interval models, and runs EIS weight calibration — in one command. See [Setup & Usage](docs/setup-and-usage.md) for what each step generates.
- 
+
 ---
- 
-### Step 4 — Run the dashboard
- 
+
+### Step 6 — Apply database migrations
+
+```bash
+python manage.py migrate
+```
+
+---
+
+### Step 7 — Collect static files
+
+```bash
+python manage.py collectstatic
+```
+
+Type `yes` when prompted. This step is required — the dashboard will fail with a server error if it's skipped, since static assets (CSS/JS) are served from a `staticfiles/` directory that only this command generates.
+
+---
+
+### Step 8 — Run the dashboard
+
 ```bash
 python manage.py runserver
 ```
- 
+
 Open the local server URL in your browser to use the map-based dashboard.
- 
+
 ---
- 
+
 ### Alternative — Run the terminal predictor
- 
+
 ```bash
 python scripts/predict.py
 ```
- 
+
 Useful for a quick CLI-based prediction without starting the web dashboard.
- 
+
 ---
  
 ## Usage Examples
