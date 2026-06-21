@@ -217,6 +217,15 @@ NIYANTRAK/
 ```bash
 git clone https://github.com/adarsh-yadav1/Niyantrak.git
 cd Niyantrak
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment (Windows)
+venv\Scripts\activate
+
+# For Linux/macOS:
+source venv/bin/activate
 ```
  
 ---
