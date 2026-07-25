@@ -481,6 +481,4 @@ Map coordinates → location intelligence → two-tier hurdle forecast → calib
  
 ---
  
-## License
- 
-Not yet specified by the author.
+
