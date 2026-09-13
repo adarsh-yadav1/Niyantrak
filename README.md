@@ -1,5 +1,4 @@
 # Niyantrak: Coordinate-First Event-Driven Traffic Intelligence
- 
 > **Click a location on the map. Get a forecasted risk score, a quantified event impact, and a ready-to-deploy traffic order — in seconds, with the evidence to back every number.**
  
 ---
